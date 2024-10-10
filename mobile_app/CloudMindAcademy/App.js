@@ -8,6 +8,7 @@ import HomeScreen from './src/screens/HomeScreen';
 import CourseListScreen from './src/screens/CourseListScreen';
 import AITutorScreen from './src/screens/AITutorScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
+import ARVRScreen from './src/screens/ARVRScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -18,6 +19,7 @@ const MainTabs = () => (
     <Tab.Screen name="Courses" component={CourseListScreen} />
     <Tab.Screen name="AI Tutor" component={AITutorScreen} />
     <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
+    <Tab.Screen name="AR/VR" component={ARVRScreen} />
   </Tab.Navigator>
 );
 

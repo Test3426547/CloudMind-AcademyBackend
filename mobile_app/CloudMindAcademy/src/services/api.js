@@ -72,4 +72,32 @@ export const authenticateVoice = async (voiceSample) => {
   }
 };
 
+// New AR/VR related functions
+export const getARVRContent = async () => {
+  try {
+    const response = await api.get('/ar-vr/content');
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const startARVRSession = async (contentId) => {
+  try {
+    const response = await api.post('/ar-vr/session', { content_id: contentId });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const updateARVRSession = async (sessionId, progress) => {
+  try {
+    const response = await api.put(`/ar-vr/session/${sessionId}`, { progress });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
 export default api;
