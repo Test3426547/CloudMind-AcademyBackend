@@ -20,4 +20,5 @@ dependencies = [
     "transformers>=4.45.2",
     "uvicorn>=0.31.1",
     "web3==6.15.1",
+    "websockets>=13.1",
 ]
