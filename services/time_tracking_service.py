@@ -135,5 +135,7 @@ class TimeTrackingService:
 
         return insights
 
-def get_time_tracking_service(llm_orchestrator: LLMOrchestrator = get_llm_orchestrator()) -> TimeTrackingService:
-    return TimeTrackingService(llm_orchestrator)
+time_tracking_service = TimeTrackingService(get_llm_orchestrator())
+
+def get_time_tracking_service() -> TimeTrackingService:
+    return time_tracking_service

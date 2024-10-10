@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from models.user import User
 from services.time_tracking_service import TimeTrackingService, get_time_tracking_service
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -20,8 +20,8 @@ class TimeEntryResponse(BaseModel):
     task_id: str
     description: str
     start_time: datetime
-    end_time: datetime = None
-    duration: float = None
+    end_time: Optional[datetime] = None
+    duration: Optional[float] = None
 
 class ProductivityAnalytics(BaseModel):
     total_time: float
