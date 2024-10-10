@@ -10,6 +10,7 @@ dependencies = [
     "fuzzywuzzy>=0.18.0",
     "numpy>=2.1.2",
     "openai>=1.51.2",
+    "plotly>=5.24.1",
     "python-dotenv>=1.0.1",
     "python-levenshtein>=0.26.0",
     "requests>=2.32.3",
