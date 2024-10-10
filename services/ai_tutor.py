@@ -1,8 +1,7 @@
 from fastapi import Depends
-from services.openai_client import send_openai_request
 from services.emotion_analysis import analyze_emotion
 from services.llm_orchestrator import LLMOrchestrator
-from typing import Dict
+from typing import Dict, List
 
 class AITutorService:
     def __init__(self):
@@ -46,10 +45,10 @@ class AITutorService:
         4. If appropriate, recommends relevant learning resources or activities
         5. Promotes inclusive and respectful communication among participants
         """
-        response = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "medium")
+        response = self.llm_orchestrator.process_request([{"role": "system", "content": prompt}, {"role": "user", "content": message}], "high")
         return response
 
-    async def summarize_collaboration(self, messages: list) -> str:
+    async def summarize_collaboration(self, messages: List[str]) -> str:
         prompt = f"""
         You are an AI assistant tasked with summarizing a collaborative learning session. 
         Please analyze the following conversation and provide a concise summary that includes:
@@ -60,11 +59,11 @@ class AITutorService:
         4. Suggestions for future collaboration sessions
 
         Conversation:
-        {messages}
+        {'\n'.join(messages)}
 
         Please provide a summary in a clear and organized format.
         """
-        summary = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "high")
+        summary = self.llm_orchestrator.process_request([{"role": "system", "content": prompt}], "high")
         return summary
 
 ai_tutor_service = AITutorService()

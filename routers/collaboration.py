@@ -51,7 +51,7 @@ async def send_collaboration_message(
     user_message = CollaborationMessage(user_id=user.id, content=message, timestamp=str(datetime.now()))
     session.messages.append(user_message)
     
-    # Get AI chatbot assistance
+    # Get AI chatbot assistance using LLMOrchestrator
     ai_response = await ai_tutor_service.get_collaboration_assistance(message)
     ai_message = CollaborationMessage(user_id="AI_Assistant", content=ai_response, timestamp=str(datetime.now()))
     session.messages.append(ai_message)
@@ -95,3 +95,21 @@ async def end_collaboration_session(session_id: str, user: User = Depends(oauth2
     
     del collaboration_sessions[session_id]
     return {"message": "Collaboration session ended successfully"}
+
+@router.post("/collaboration/{session_id}/summarize")
+async def summarize_collaboration_session(
+    session_id: str,
+    user: User = Depends(oauth2_scheme),
+    ai_tutor_service: AITutorService = Depends(get_ai_tutor_service)
+):
+    if session_id not in collaboration_sessions:
+        raise HTTPException(status_code=404, detail="Collaboration session not found")
+    
+    session = collaboration_sessions[session_id]
+    if user.id not in session.participants:
+        raise HTTPException(status_code=403, detail="User is not a participant in this session")
+    
+    messages = [f"{msg.user_id}: {msg.content}" for msg in session.messages]
+    summary = await ai_tutor_service.summarize_collaboration(messages)
+    
+    return {"summary": summary}
