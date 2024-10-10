@@ -23,7 +23,7 @@ app.include_router(code_sandbox.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")
 app.include_router(learning_path.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
-app.include_router(video_content.router, prefix="/api/v1")
+app.include_router(video_content.router, prefix="/api/v1")  # Add the new video content router
 app.include_router(plagiarism.router, prefix="/api/v1")
 app.include_router(virtual_lab.router, prefix="/api/v1")
 app.include_router(ar_vr.router, prefix="/api/v1")
@@ -35,7 +35,7 @@ app.include_router(grading.router, prefix="/api/v1")
 app.include_router(offline_learning.router, prefix="/api/v1")
 app.include_router(coding_challenges.router, prefix="/api/v1")
 app.include_router(notification.router, prefix="/api/v1")
-app.include_router(percipio.router, prefix="/api/v1")  # Add the Percipio router
+app.include_router(percipio.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():

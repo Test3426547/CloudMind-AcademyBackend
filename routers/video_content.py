@@ -1,39 +1,70 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List
-from models.video_content import VideoContent, VideoContentCreate
-from services.video_content_service import get_video_content_service, VideoContentService
+from fastapi.security import OAuth2PasswordBearer
+from models.user import User
+from typing import List, Dict
+from pydantic import BaseModel
 
 router = APIRouter()
 
-@router.post("/video-content", response_model=VideoContent)
-async def create_video_content(video_content: VideoContentCreate, service: VideoContentService = Depends(get_video_content_service)):
-    return await service.create_video_content(video_content)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-@router.get("/video-content/{video_id}", response_model=VideoContent)
-async def get_video_content(video_id: str, service: VideoContentService = Depends(get_video_content_service)):
-    video_content = await service.get_video_content(video_id)
-    if video_content is None:
-        raise HTTPException(status_code=404, detail="Video content not found")
-    return video_content
+class VideoMetadata(BaseModel):
+    id: str
+    title: str
+    description: str
+    duration: int  # in seconds
+    thumbnail_url: str
 
-@router.get("/video-content", response_model=List[VideoContent])
-async def list_video_contents(skip: int = 0, limit: int = 10, service: VideoContentService = Depends(get_video_content_service)):
-    return await service.list_video_contents(skip, limit)
+class VideoProgress(BaseModel):
+    video_id: str
+    progress: float  # 0 to 1
 
-@router.get("/video-content/search", response_model=List[VideoContent])
-async def search_video_contents(query: str, service: VideoContentService = Depends(get_video_content_service)):
-    return await service.search_video_contents(query)
+# Mock data for demonstration
+mock_videos = [
+    {
+        "id": "1",
+        "title": "Introduction to Python",
+        "description": "Learn the basics of Python programming",
+        "duration": 600,
+        "thumbnail_url": "https://example.com/thumbnail1.jpg",
+        "hls_url": "https://example.com/video1.m3u8"
+    },
+    {
+        "id": "2",
+        "title": "Advanced Python Concepts",
+        "description": "Dive deeper into Python with advanced topics",
+        "duration": 900,
+        "thumbnail_url": "https://example.com/thumbnail2.jpg",
+        "hls_url": "https://example.com/video2.m3u8"
+    }
+]
 
-@router.put("/video-content/{video_id}", response_model=VideoContent)
-async def update_video_content(video_id: str, video_content: VideoContentCreate, service: VideoContentService = Depends(get_video_content_service)):
-    updated_video = await service.update_video_content(video_id, video_content)
-    if updated_video is None:
-        raise HTTPException(status_code=404, detail="Video content not found")
-    return updated_video
+@router.get("/videos", response_model=List[VideoMetadata])
+async def get_videos(user: User = Depends(oauth2_scheme)):
+    return [VideoMetadata(**video) for video in mock_videos]
 
-@router.delete("/video-content/{video_id}", response_model=bool)
-async def delete_video_content(video_id: str, service: VideoContentService = Depends(get_video_content_service)):
-    deleted = await service.delete_video_content(video_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Video content not found")
-    return True
+@router.get("/videos/{video_id}", response_model=VideoMetadata)
+async def get_video_metadata(video_id: str, user: User = Depends(oauth2_scheme)):
+    video = next((v for v in mock_videos if v["id"] == video_id), None)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return VideoMetadata(**video)
+
+@router.get("/videos/{video_id}/stream")
+async def get_video_stream_url(video_id: str, user: User = Depends(oauth2_scheme)):
+    video = next((v for v in mock_videos if v["id"] == video_id), None)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return {"hls_url": video["hls_url"]}
+
+@router.post("/videos/{video_id}/progress")
+async def update_video_progress(video_id: str, progress: VideoProgress, user: User = Depends(oauth2_scheme)):
+    # In a real implementation, you would update the user's progress in a database
+    return {"message": f"Progress updated for video {video_id}"}
+
+@router.get("/videos/{video_id}/related")
+async def get_related_videos(video_id: str, user: User = Depends(oauth2_scheme)):
+    # In a real implementation, you would use a recommendation system
+    # For now, we'll just return all other videos
+    related_videos = [v for v in mock_videos if v["id"] != video_id]
+    return [VideoMetadata(**video) for video in related_videos]
