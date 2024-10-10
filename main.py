@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration
+from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration, certificate
 import uvicorn
 import requests
 import json
@@ -32,6 +32,7 @@ app.include_router(ar_vr.router, prefix="/api/v1")
 app.include_router(social.router, prefix="/api/v1")
 app.include_router(web_scraping.router, prefix="/api/v1")
 app.include_router(collaboration.router, prefix="/api/v1")
+app.include_router(certificate.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
@@ -44,38 +45,40 @@ def get_routes():
         routes.append(f"{route.methods} {route.path}")
     return {"routes": routes}
 
-def test_collaboration_tool():
+def test_certificate_functionality():
     base_url = "http://localhost:8000/api/v1"
     
-    # Create a collaboration session
-    create_session_url = f"{base_url}/collaboration/create-session"
-    create_session_data = {"participants": ["user1", "user2"]}
-    create_session_response = requests.post(create_session_url, json=create_session_data)
-    session_id = create_session_response.json()["session_id"]
-    print(f"Created session: {session_id}")
+    # Create a certificate
+    create_certificate_url = f"{base_url}/certificates"
+    create_certificate_data = {
+        "course_id": "course123",
+        "user_id": "user456",
+        "issue_date": "2024-10-10T12:00:00"
+    }
+    create_certificate_response = requests.post(create_certificate_url, json=create_certificate_data)
+    certificate = create_certificate_response.json()
+    print(f"Created certificate: {json.dumps(certificate, indent=2)}")
     
-    # Send a message to the session
-    send_message_url = f"{base_url}/collaboration/{session_id}/send-message"
-    send_message_data = {"message": "Hello, can someone help me understand the concept of machine learning?"}
-    send_message_response = requests.post(send_message_url, json=send_message_data)
-    print(f"Sent message response: {json.dumps(send_message_response.json(), indent=2)}")
+    # Get the created certificate
+    get_certificate_url = f"{base_url}/certificates/{certificate['id']}"
+    get_certificate_response = requests.get(get_certificate_url)
+    print(f"Retrieved certificate: {json.dumps(get_certificate_response.json(), indent=2)}")
     
-    # Get messages from the session
-    get_messages_url = f"{base_url}/collaboration/{session_id}/messages"
-    get_messages_response = requests.get(get_messages_url)
-    print(f"Retrieved messages: {json.dumps(get_messages_response.json(), indent=2)}")
+    # Verify the certificate
+    verify_certificate_url = f"{base_url}/certificates/{certificate['id']}/verify"
+    verify_certificate_data = {"certificate_hash": certificate['hash']}
+    verify_certificate_response = requests.post(verify_certificate_url, json=verify_certificate_data)
+    print(f"Verify certificate response: {json.dumps(verify_certificate_response.json(), indent=2)}")
     
-    # Invite a new participant
-    invite_url = f"{base_url}/collaboration/{session_id}/invite"
-    invite_data = {"new_participant": "user3"}
-    invite_response = requests.post(invite_url, json=invite_data)
-    print(f"Invite response: {json.dumps(invite_response.json(), indent=2)}")
+    # Revoke the certificate
+    revoke_certificate_url = f"{base_url}/certificates/{certificate['id']}/revoke"
+    revoke_certificate_response = requests.post(revoke_certificate_url)
+    print(f"Revoke certificate response: {json.dumps(revoke_certificate_response.json(), indent=2)}")
     
-    # End the collaboration session
-    end_session_url = f"{base_url}/collaboration/{session_id}"
-    end_session_response = requests.delete(end_session_url)
-    print(f"End session response: {json.dumps(end_session_response.json(), indent=2)}")
+    # Try to verify the revoked certificate
+    verify_revoked_response = requests.post(verify_certificate_url, json=verify_certificate_data)
+    print(f"Verify revoked certificate response: {json.dumps(verify_revoked_response.json(), indent=2)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    test_collaboration_tool()
+    test_certificate_functionality()
