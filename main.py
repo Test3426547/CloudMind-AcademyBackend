@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping
+from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration
 
 app = FastAPI(title="CloudMind Academy", version="1.0.0")
 
@@ -26,7 +26,8 @@ app.include_router(plagiarism.router, prefix="/api/v1")
 app.include_router(virtual_lab.router, prefix="/api/v1")
 app.include_router(ar_vr.router, prefix="/api/v1")
 app.include_router(social.router, prefix="/api/v1")
-app.include_router(web_scraping.router, prefix="/api/v1")  # Add the new web scraping router
+app.include_router(web_scraping.router, prefix="/api/v1")
+app.include_router(collaboration.router, prefix="/api/v1")  # Add the new collaboration router
 
 @app.get("/")
 async def root():
