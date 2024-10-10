@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from models.user import User
-from typing import Dict
+from typing import Dict, Any
 import uuid
 
 router = APIRouter()
@@ -23,7 +23,7 @@ async def share_content(content_type: str, content_id: str, platform: str, user:
     return {"message": f"Content shared on {platform}", "share_id": share_id}
 
 @router.get("/social/shared/{share_id}")
-async def get_shared_content(share_id: str, user: User = Depends(oauth2_scheme)) -> Dict[str, any]:
+async def get_shared_content(share_id: str, user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
     if share_id not in shared_content:
         raise HTTPException(status_code=404, detail="Shared content not found")
     return shared_content[share_id]

@@ -15,8 +15,24 @@ class ScrapeResponse(BaseModel):
     content: str
     is_anomaly: bool
 
+class ScrapingHistoryItem(BaseModel):
+    timestamp: str
+    word_count: int
+
 class ScrapingHistoryResponse(BaseModel):
-    history: List[Dict[str, any]]
+    history: List[ScrapingHistoryItem]
+
+class SearchRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+class SearchResultItem(BaseModel):
+    url: str
+    content: str
+    similarity: float
+
+class SearchResponse(BaseModel):
+    results: List[SearchResultItem]
 
 @router.post("/scrape", response_model=ScrapeResponse)
 async def scrape_website(request: ScrapeRequest, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
@@ -26,4 +42,9 @@ async def scrape_website(request: ScrapeRequest, token: str = Depends(oauth2_sch
 @router.get("/history", response_model=ScrapingHistoryResponse)
 async def get_scraping_history(url: HttpUrl, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
     history = service.get_scraping_history(str(url))
-    return ScrapingHistoryResponse(history=history)
+    return ScrapingHistoryResponse(history=[ScrapingHistoryItem(**item) for item in history])
+
+@router.post("/search", response_model=SearchResponse)
+async def search_similar_content(request: SearchRequest, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
+    results = await service.search_similar_content(request.query, request.limit)
+    return SearchResponse(results=[SearchResultItem(**item) for item in results])
