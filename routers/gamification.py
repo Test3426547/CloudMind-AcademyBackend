@@ -16,9 +16,9 @@ async def award_points(user_id: str, points: int, reason: str, user: User = Depe
     return result
 
 @router.get("/gamification/leaderboard")
-async def get_leaderboard(limit: int = 10, user: User = Depends(oauth2_scheme)) -> Dict[str, List[Dict[str, int]]]:
+async def get_leaderboard(limit: int = 10, period: str = "all_time", user: User = Depends(oauth2_scheme)) -> Dict[str, List[Dict[str, any]]]:
     gamification_engine = get_gamification_engine()
-    leaderboard = gamification_engine.get_leaderboard(limit)
+    leaderboard = gamification_engine.get_leaderboard(limit, period)
     return {"leaderboard": leaderboard}
 
 @router.post("/gamification/generate-schedule")
@@ -34,8 +34,19 @@ async def generate_adaptive_schedule(
 
 @router.post("/gamification/complete-challenge")
 async def complete_challenge(challenge_id: str, user: User = Depends(oauth2_scheme)) -> Dict[str, str]:
-    # Here you would typically mark the challenge as completed and award points
     gamification_engine = get_gamification_engine()
     points_awarded = 50  # This could be dynamic based on the challenge difficulty
     result = gamification_engine.award_points(user.id, points_awarded, f"Completed challenge {challenge_id}")
     return {"message": f"Challenge {challenge_id} completed successfully. Awarded {points_awarded} points."}
+
+@router.get("/gamification/user-stats")
+async def get_user_stats(user: User = Depends(oauth2_scheme)) -> Dict[str, any]:
+    gamification_engine = get_gamification_engine()
+    stats = gamification_engine.get_user_stats(user.id)
+    return stats
+
+@router.post("/gamification/share-achievement")
+async def share_achievement(achievement_id: str, platform: str, user: User = Depends(oauth2_scheme)) -> Dict[str, str]:
+    gamification_engine = get_gamification_engine()
+    result = gamification_engine.share_achievement(user.id, achievement_id, platform)
+    return {"message": f"Achievement shared on {platform}", "share_id": result}

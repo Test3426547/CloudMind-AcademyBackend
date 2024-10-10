@@ -45,9 +45,9 @@ export const generateQuiz = async (topic, numQuestions) => {
   }
 };
 
-export const getLeaderboard = async () => {
+export const getLeaderboard = async (period = 'all_time', limit = 10) => {
   try {
-    const response = await api.get('/gamification/leaderboard');
+    const response = await api.get(`/gamification/leaderboard?period=${period}&limit=${limit}`);
     return response.data;
   } catch (error) {
     throw error;
@@ -72,7 +72,6 @@ export const authenticateVoice = async (voiceSample) => {
   }
 };
 
-// New AR/VR related functions
 export const getARVRContent = async () => {
   try {
     const response = await api.get('/ar-vr/content');
@@ -94,6 +93,33 @@ export const startARVRSession = async (contentId) => {
 export const updateARVRSession = async (sessionId, progress) => {
   try {
     const response = await api.put(`/ar-vr/session/${sessionId}`, { progress });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const shareContent = async (contentType, contentId, platform) => {
+  try {
+    const response = await api.post('/social/share', { content_type: contentType, content_id: contentId, platform });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const likeContent = async (contentType, contentId) => {
+  try {
+    const response = await api.post('/social/like', { content_type: contentType, content_id: contentId });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const commentOnContent = async (contentType, contentId, comment) => {
+  try {
+    const response = await api.post('/social/comment', { content_type: contentType, content_id: contentId, comment });
     return response.data;
   } catch (error) {
     throw error;
