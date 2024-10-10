@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 class LLMOrchestrator:
     def __init__(self):
@@ -8,10 +8,11 @@ class LLMOrchestrator:
         self.base_url = "https://openrouter.ai/api/v1"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://cloudmindacademy.com"  # Replace with your actual domain
         }
 
-    def send_request(self, model: str, messages: list, max_tokens: int = 1000) -> Dict[str, Any]:
+    def send_request(self, model: str, messages: List[Dict[str, str]], max_tokens: int = 1000) -> Dict[str, Any]:
         url = f"{self.base_url}/chat/completions"
         payload = {
             "model": model,
@@ -30,11 +31,11 @@ class LLMOrchestrator:
         if task_complexity == "high":
             return "openai/gpt-4o"
         elif task_complexity == "medium":
-            return "anthropic/claude-2"
+            return "anthropic/claude-3-sonnet"
         else:
-            return "google/palm-2-chat-bison"
+            return "openai/gpt-4o-mini"
 
-    def process_request(self, messages: list, task_complexity: str) -> Optional[str]:
+    def process_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
         model = self.choose_model(task_complexity)
         response = self.send_request(model, messages)
         return self.handle_response(response)

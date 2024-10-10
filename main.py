@@ -44,8 +44,7 @@ def get_routes():
         routes.append(f"{route.methods} {route.path}")
     return {"routes": routes}
 
-async def test_collaboration_tool():
-    await asyncio.sleep(5)  # Wait for the server to start
+def test_collaboration_tool():
     base_url = "http://localhost:8000/api/v1"
     
     # Create a collaboration session
@@ -77,12 +76,6 @@ async def test_collaboration_tool():
     end_session_response = requests.delete(end_session_url)
     print(f"End session response: {json.dumps(end_session_response.json(), indent=2)}")
 
-async def start_server():
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-    server = uvicorn.Server(config)
-    await server.serve()
-
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(test_collaboration_tool())
-    loop.run_until_complete(start_server())
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+    test_collaboration_tool()

@@ -20,16 +20,21 @@ class CollaborationSession(BaseModel):
     session_id: str
     participants: List[str]
     messages: List[CollaborationMessage]
+    created_at: str
+    last_activity: str
 
 collaboration_sessions: Dict[str, CollaborationSession] = {}
 
 @router.post("/collaboration/create-session")
 async def create_collaboration_session(participants: List[str], user: User = Depends(oauth2_scheme)):
     session_id = str(uuid.uuid4())
+    current_time = str(datetime.now())
     collaboration_sessions[session_id] = CollaborationSession(
         session_id=session_id,
         participants=participants,
-        messages=[]
+        messages=[],
+        created_at=current_time,
+        last_activity=current_time
     )
     return {"session_id": session_id}
 
@@ -48,11 +53,14 @@ async def send_collaboration_message(
         raise HTTPException(status_code=403, detail="User is not a participant in this session")
     
     # Add user message to the session
-    user_message = CollaborationMessage(user_id=user.id, content=message, timestamp=str(datetime.now()))
+    current_time = str(datetime.now())
+    user_message = CollaborationMessage(user_id=user.id, content=message, timestamp=current_time)
     session.messages.append(user_message)
+    session.last_activity = current_time
     
     # Get AI chatbot assistance using LLMOrchestrator
-    ai_response = await ai_tutor_service.get_collaboration_assistance(message)
+    context = [{"role": "user" if msg.user_id != "AI_Assistant" else "assistant", "content": msg.content} for msg in session.messages[-5:]]
+    ai_response = await ai_tutor_service.get_collaboration_assistance(message, context)
     ai_message = CollaborationMessage(user_id="AI_Assistant", content=ai_response, timestamp=str(datetime.now()))
     session.messages.append(ai_message)
     
@@ -113,3 +121,37 @@ async def summarize_collaboration_session(
     summary = await ai_tutor_service.summarize_collaboration(messages)
     
     return {"summary": summary}
+
+@router.get("/collaboration/{session_id}/info")
+async def get_collaboration_session_info(session_id: str, user: User = Depends(oauth2_scheme)):
+    if session_id not in collaboration_sessions:
+        raise HTTPException(status_code=404, detail="Collaboration session not found")
+    
+    session = collaboration_sessions[session_id]
+    if user.id not in session.participants:
+        raise HTTPException(status_code=403, detail="User is not a participant in this session")
+    
+    return {
+        "session_id": session.session_id,
+        "participants": session.participants,
+        "created_at": session.created_at,
+        "last_activity": session.last_activity,
+        "message_count": len(session.messages)
+    }
+
+@router.post("/collaboration/{session_id}/leave")
+async def leave_collaboration_session(session_id: str, user: User = Depends(oauth2_scheme)):
+    if session_id not in collaboration_sessions:
+        raise HTTPException(status_code=404, detail="Collaboration session not found")
+    
+    session = collaboration_sessions[session_id]
+    if user.id not in session.participants:
+        raise HTTPException(status_code=403, detail="User is not a participant in this session")
+    
+    session.participants.remove(user.id)
+    
+    if len(session.participants) == 0:
+        del collaboration_sessions[session_id]
+        return {"message": "You have left the session. The session has been closed as there are no participants left."}
+    
+    return {"message": "You have successfully left the collaboration session"}
