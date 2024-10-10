@@ -26,6 +26,14 @@ app.include_router(analytics.router, prefix="/api/v1")
 async def root():
     return {"message": "Welcome to CloudMind Academy"}
 
+# Add a new endpoint to list all registered routes
+@app.get("/routes")
+def get_routes():
+    routes = []
+    for route in app.routes:
+        routes.append(f"{route.methods} {route.path}")
+    return {"routes": routes}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
