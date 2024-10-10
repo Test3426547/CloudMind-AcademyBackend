@@ -4,7 +4,6 @@ from datetime import datetime
 
 class CertificateBase(BaseModel):
     course_id: str
-    user_id: str
     issue_date: datetime
 
 class CertificateCreate(CertificateBase):
@@ -12,6 +11,7 @@ class CertificateCreate(CertificateBase):
 
 class Certificate(CertificateBase):
     id: str
+    user_id: str
     hash: str
     revoked: bool = False
 
