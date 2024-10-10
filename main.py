@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration, certificate, grading
+from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration, certificate, grading, offline_learning
 import uvicorn
 
 app = FastAPI(title="CloudMind Academy", version="1.0.0")
@@ -31,7 +31,8 @@ app.include_router(social.router, prefix="/api/v1")
 app.include_router(web_scraping.router, prefix="/api/v1")
 app.include_router(collaboration.router, prefix="/api/v1")
 app.include_router(certificate.router, prefix="/api/v1")
-app.include_router(grading.router, prefix="/api/v1")  # Add the new grading router
+app.include_router(grading.router, prefix="/api/v1")
+app.include_router(offline_learning.router, prefix="/api/v1")  # Add the new offline learning router
 
 @app.get("/")
 async def root():
