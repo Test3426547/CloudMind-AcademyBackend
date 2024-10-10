@@ -7,11 +7,13 @@ class PercipioService:
         self.base_url = "https://api.percipio.com/v1"  # Replace with the actual Percipio API base URL
         self.api_key = os.getenv("PERCIPIO_API_KEY")
         self.org_id = os.getenv("PERCIPIO_ORG_ID")
+        self.email = "ogovender@emmconsulting.com.au"  # Add the provided email
 
     def _make_request(self, method: str, endpoint: str, params: Dict = None, data: Dict = None) -> Dict:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "X-Percipio-Email": self.email  # Include the email in the request headers
         }
         url = f"{self.base_url}/{endpoint}"
         response = requests.request(method, url, headers=headers, params=params, json=data)
@@ -38,6 +40,10 @@ class PercipioService:
             "action": "START"
         }
         return self._make_request("POST", endpoint, data=data)
+
+    def get_user_progress(self, user_id: str) -> Dict[str, Any]:
+        endpoint = f"organizations/{self.org_id}/users/{user_id}/learning-activity"
+        return self._make_request("GET", endpoint)
 
 percipio_service = PercipioService()
 

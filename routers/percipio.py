@@ -44,3 +44,14 @@ async def start_percipio_course(
         return {"message": "Course started successfully", "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/percipio/user/progress")
+async def get_user_progress(
+    user: User = Depends(oauth2_scheme),
+    percipio_service: PercipioService = Depends(get_percipio_service)
+):
+    try:
+        progress = percipio_service.get_user_progress(user.id)
+        return {"user_id": user.id, "progress": progress}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration, certificate, grading, offline_learning, coding_challenges, notification
+from routers import auth, ai_tutor, quiz, code_sandbox, gamification, learning_path, analytics, video_content, plagiarism, virtual_lab, ar_vr, social, web_scraping, collaboration, certificate, grading, offline_learning, coding_challenges, notification, percipio
 import uvicorn
 
 app = FastAPI(title="CloudMind Academy", version="1.0.0")
@@ -34,7 +34,8 @@ app.include_router(certificate.router, prefix="/api/v1")
 app.include_router(grading.router, prefix="/api/v1")
 app.include_router(offline_learning.router, prefix="/api/v1")
 app.include_router(coding_challenges.router, prefix="/api/v1")
-app.include_router(notification.router, prefix="/api/v1")  # Add the new notification router
+app.include_router(notification.router, prefix="/api/v1")
+app.include_router(percipio.router, prefix="/api/v1")  # Add the Percipio router
 
 @app.get("/")
 async def root():
