@@ -4,6 +4,8 @@ from models.user import User
 from services.ai_tutor import get_ai_tutor_service, AITutorService
 from typing import List, Dict
 from pydantic import BaseModel
+from datetime import datetime
+import uuid
 
 router = APIRouter()
 
@@ -23,7 +25,7 @@ collaboration_sessions: Dict[str, CollaborationSession] = {}
 
 @router.post("/collaboration/create-session")
 async def create_collaboration_session(participants: List[str], user: User = Depends(oauth2_scheme)):
-    session_id = f"session_{len(collaboration_sessions) + 1}"
+    session_id = str(uuid.uuid4())
     collaboration_sessions[session_id] = CollaborationSession(
         session_id=session_id,
         participants=participants,
@@ -66,3 +68,30 @@ async def get_collaboration_messages(session_id: str, user: User = Depends(oauth
         raise HTTPException(status_code=403, detail="User is not a participant in this session")
     
     return {"messages": session.messages}
+
+@router.post("/collaboration/{session_id}/invite")
+async def invite_participant(session_id: str, new_participant: str, user: User = Depends(oauth2_scheme)):
+    if session_id not in collaboration_sessions:
+        raise HTTPException(status_code=404, detail="Collaboration session not found")
+    
+    session = collaboration_sessions[session_id]
+    if user.id not in session.participants:
+        raise HTTPException(status_code=403, detail="User is not a participant in this session")
+    
+    if new_participant not in session.participants:
+        session.participants.append(new_participant)
+        return {"message": f"User {new_participant} has been invited to the collaboration session"}
+    else:
+        return {"message": f"User {new_participant} is already a participant in this session"}
+
+@router.delete("/collaboration/{session_id}")
+async def end_collaboration_session(session_id: str, user: User = Depends(oauth2_scheme)):
+    if session_id not in collaboration_sessions:
+        raise HTTPException(status_code=404, detail="Collaboration session not found")
+    
+    session = collaboration_sessions[session_id]
+    if user.id not in session.participants:
+        raise HTTPException(status_code=403, detail="User is not a participant in this session")
+    
+    del collaboration_sessions[session_id]
+    return {"message": "Collaboration session ended successfully"}

@@ -1,13 +1,17 @@
 from fastapi import Depends
 from services.openai_client import send_openai_request
 from services.emotion_analysis import analyze_emotion
+from services.llm_orchestrator import LLMOrchestrator
 from typing import Dict
 
 class AITutorService:
+    def __init__(self):
+        self.llm_orchestrator = LLMOrchestrator()
+
     async def chat_with_tutor(self, message: str) -> Dict[str, str]:
         user_emotion = analyze_emotion(message)
         prompt = f"User emotion: {user_emotion}\nUser message: {message}\nRespond as an empathetic AI tutor, addressing the user's emotional state:"
-        response = send_openai_request(prompt)
+        response = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "medium")
         
         ai_emotion = analyze_emotion(response)
         
@@ -20,7 +24,7 @@ class AITutorService:
     async def explain_concept(self, concept: str) -> Dict[str, str]:
         user_emotion = analyze_emotion(f"Explain {concept}")
         prompt = f"User emotion: {user_emotion}\nExplain the following concept in simple terms, considering the user's emotional state: {concept}"
-        explanation = send_openai_request(prompt)
+        explanation = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "medium")
         
         return {
             "user_emotion": user_emotion,
@@ -40,9 +44,28 @@ class AITutorService:
         2. Encourages further discussion or exploration of the topic
         3. Suggests potential areas for collaboration or group study
         4. If appropriate, recommends relevant learning resources or activities
+        5. Promotes inclusive and respectful communication among participants
         """
-        response = send_openai_request(prompt)
+        response = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "medium")
         return response
+
+    async def summarize_collaboration(self, messages: list) -> str:
+        prompt = f"""
+        You are an AI assistant tasked with summarizing a collaborative learning session. 
+        Please analyze the following conversation and provide a concise summary that includes:
+
+        1. Main topics discussed
+        2. Key insights or conclusions reached
+        3. Any questions that remained unanswered or require further exploration
+        4. Suggestions for future collaboration sessions
+
+        Conversation:
+        {messages}
+
+        Please provide a summary in a clear and organized format.
+        """
+        summary = self.llm_orchestrator.process_request([{"role": "user", "content": prompt}], "high")
+        return summary
 
 ai_tutor_service = AITutorService()
 
