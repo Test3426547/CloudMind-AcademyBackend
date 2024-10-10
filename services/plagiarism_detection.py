@@ -1,13 +1,12 @@
 import os
-from openai import OpenAI
 from typing import Dict, List, Tuple
+from services.llm_orchestrator import LLMOrchestrator
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+llm_orchestrator = LLMOrchestrator()
 
 def compare_texts(original_text: str, submitted_text: str) -> Tuple[float, str]:
     """
-    Compare the submitted text with the original text using GPT-4 to detect plagiarism.
+    Compare the submitted text with the original text using LLMOrchestrator to detect plagiarism.
     
     :param original_text: The original text to compare against
     :param submitted_text: The text submitted by the user
@@ -29,15 +28,16 @@ def compare_texts(original_text: str, submitted_text: str) -> Tuple[float, str]:
     }}
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={ "type": "json_object" }
-    )
+    response = llm_orchestrator.process_request([
+        {"role": "system", "content": "You are a plagiarism detection system."},
+        {"role": "user", "content": prompt}
+    ], "medium")
 
-    result = response.choices[0].message.content
-    result_dict = eval(result)  # Convert string to dictionary
-    return result_dict["similarity_score"], result_dict["explanation"]
+    if response:
+        result_dict = eval(response)  # Convert string to dictionary
+        return result_dict["similarity_score"], result_dict["explanation"]
+    else:
+        return 0.0, "Error: Unable to process the request."
 
 def detect_plagiarism(submitted_text: str, original_texts: List[str]) -> Dict[str, any]:
     """
