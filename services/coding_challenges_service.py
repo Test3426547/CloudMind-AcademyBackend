@@ -1,12 +1,13 @@
 import uuid
 from typing import List, Dict, Any
-from services.llm_orchestrator import LLMOrchestrator
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
+from fastapi import Depends
 
 class CodingChallengesService:
-    def __init__(self):
+    def __init__(self, llm_orchestrator: LLMOrchestrator):
         self.challenges = {}
         self.submissions = {}
-        self.llm_orchestrator = LLMOrchestrator()
+        self.llm_orchestrator = llm_orchestrator
 
     async def get_challenges(self) -> List[Dict[str, Any]]:
         return list(self.challenges.values())
@@ -28,7 +29,6 @@ class CodingChallengesService:
         if not challenge:
             raise ValueError("Challenge not found")
 
-        # Use LLMOrchestrator to evaluate the code
         prompt = f"""
         Evaluate the following code submission for the coding challenge:
 
@@ -74,7 +74,5 @@ class CodingChallengesService:
             for submission in sorted_submissions[:10]  # Top 10 submissions
         ]
 
-coding_challenges_service = CodingChallengesService()
-
-def get_coding_challenges_service() -> CodingChallengesService:
-    return coding_challenges_service
+def get_coding_challenges_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> CodingChallengesService:
+    return CodingChallengesService(llm_orchestrator)

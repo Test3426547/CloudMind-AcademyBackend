@@ -1,9 +1,10 @@
 from typing import List, Dict, Any
-from services.llm_orchestrator import LLMOrchestrator
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
+from fastapi import Depends
 
 class GradingService:
-    def __init__(self):
-        self.llm_orchestrator = LLMOrchestrator()
+    def __init__(self, llm_orchestrator: LLMOrchestrator):
+        self.llm_orchestrator = llm_orchestrator
 
     async def grade_assignment(self, assignment_text: str, student_submission: str) -> Dict[str, Any]:
         prompt = f"""
@@ -57,7 +58,5 @@ class GradingService:
 
         return eval(response)
 
-grading_service = GradingService()
-
-def get_grading_service() -> GradingService:
-    return grading_service
+def get_grading_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> GradingService:
+    return GradingService(llm_orchestrator)

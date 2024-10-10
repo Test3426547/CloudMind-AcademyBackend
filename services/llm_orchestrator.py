@@ -1,31 +1,17 @@
 import os
-import requests
+from openai import OpenAI
 from typing import Dict, Any, Optional, List
 
 class LLMOrchestrator:
     def __init__(self):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
-        self.base_url = "https://openrouter.ai/api/v1"
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://cloudmindacademy.com"  # Replace with your actual domain
-        }
-
-    def send_request(self, model: str, messages: List[Dict[str, str]], max_tokens: int = 1000) -> Dict[str, Any]:
-        url = f"{self.base_url}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens
-        }
-        response = requests.post(url, json=payload, headers=self.headers)
-        return response.json()
-
-    def handle_response(self, response: Dict[str, Any]) -> Optional[str]:
-        if "choices" in response and len(response["choices"]) > 0:
-            return response["choices"][0]["message"]["content"]
-        return None
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=self.api_key,
+            default_headers={
+                "HTTP-Referer": "https://cloudmindacademy.com"  # Replace with your actual domain
+            }
+        )
 
     def choose_model(self, task_complexity: str) -> str:
         if task_complexity == "high":
@@ -37,11 +23,17 @@ class LLMOrchestrator:
 
     def process_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
         model = self.choose_model(task_complexity)
-        response = self.send_request(model, messages)
-        return self.handle_response(response)
+        try:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error processing request: {str(e)}")
+            return None
 
-# Usage example:
-# orchestrator = LLMOrchestrator()
-# messages = [{"role": "user", "content": "What is the capital of France?"}]
-# result = orchestrator.process_request(messages, "low")
-# print(result)
+llm_orchestrator = LLMOrchestrator()
+
+def get_llm_orchestrator() -> LLMOrchestrator:
+    return llm_orchestrator

@@ -2,21 +2,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from services.emotion_analysis import analyze_emotion
 from services.sentiment_analysis import analyze_sentiment
-from services.llm_orchestrator import LLMOrchestrator
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
 from models.user import User
 from typing import Dict, Any
 
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-llm_orchestrator = LLMOrchestrator()
 
 @router.post("/analytics/emotion")
-async def analyze_user_emotion(text: str, user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def analyze_user_emotion(
+    text: str,
+    user: User = Depends(oauth2_scheme),
+    llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)
+) -> Dict[str, Any]:
     try:
         emotion_analysis = analyze_emotion(text)
         
-        # Use LLMOrchestrator for advanced emotion analysis
         prompt = f"Provide a detailed interpretation of the following emotion analysis:\n\n{emotion_analysis}"
         advanced_analysis = llm_orchestrator.process_request([
             {"role": "system", "content": "You are an expert in emotion analysis."},
@@ -29,11 +31,14 @@ async def analyze_user_emotion(text: str, user: User = Depends(oauth2_scheme)) -
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/analytics/sentiment")
-async def analyze_user_sentiment(text: str, user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def analyze_user_sentiment(
+    text: str,
+    user: User = Depends(oauth2_scheme),
+    llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)
+) -> Dict[str, Any]:
     try:
         sentiment_result = analyze_sentiment(text)
         
-        # Use LLMOrchestrator for advanced sentiment analysis
         prompt = f"Provide a detailed interpretation of the following sentiment analysis:\n\n{sentiment_result}"
         advanced_analysis = llm_orchestrator.process_request([
             {"role": "system", "content": "You are an expert in sentiment analysis."},
@@ -48,12 +53,15 @@ async def analyze_user_sentiment(text: str, user: User = Depends(oauth2_scheme))
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/analytics/content-insights")
-async def get_content_insights(text: str, user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def get_content_insights(
+    text: str,
+    user: User = Depends(oauth2_scheme),
+    llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)
+) -> Dict[str, Any]:
     try:
         emotion_analysis = analyze_emotion(text)
         sentiment_result = analyze_sentiment(text)
         
-        # Use LLMOrchestrator for comprehensive content insights
         prompt = f"""
         Provide comprehensive content insights based on the following emotion and sentiment analysis:
         
@@ -82,7 +90,10 @@ async def get_content_insights(text: str, user: User = Depends(oauth2_scheme)) -
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/analytics/user-performance")
-async def get_user_performance(user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def get_user_performance(
+    user: User = Depends(oauth2_scheme),
+    llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)
+) -> Dict[str, Any]:
     # Here you would typically fetch and analyze the user's performance data
     mock_performance = {
         "courses_completed": 5,
@@ -92,7 +103,6 @@ async def get_user_performance(user: User = Depends(oauth2_scheme)) -> Dict[str,
         "areas_for_improvement": ["Algorithms", "Machine Learning"]
     }
     
-    # Use LLMOrchestrator for personalized performance analysis
     prompt = f"""
     Provide a personalized performance analysis and recommendations based on the following user data:
     
@@ -117,7 +127,11 @@ async def get_user_performance(user: User = Depends(oauth2_scheme)) -> Dict[str,
     }
 
 @router.get("/analytics/course-engagement")
-async def get_course_engagement(course_id: str, user: User = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def get_course_engagement(
+    course_id: str,
+    user: User = Depends(oauth2_scheme),
+    llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)
+) -> Dict[str, Any]:
     # Here you would typically fetch and analyze the engagement data for a specific course
     mock_engagement = {
         "total_students": 100,
@@ -126,7 +140,6 @@ async def get_course_engagement(course_id: str, user: User = Depends(oauth2_sche
         "most_engaging_module": "Introduction to Neural Networks"
     }
     
-    # Use LLMOrchestrator for course engagement analysis and recommendations
     prompt = f"""
     Analyze the following course engagement data and provide insights and recommendations:
     

@@ -1,11 +1,11 @@
 from fastapi import Depends
 from services.emotion_analysis import analyze_emotion
-from services.llm_orchestrator import LLMOrchestrator
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
 from typing import Dict, List
 
 class AITutorService:
-    def __init__(self):
-        self.llm_orchestrator = LLMOrchestrator()
+    def __init__(self, llm_orchestrator: LLMOrchestrator):
+        self.llm_orchestrator = llm_orchestrator
 
     async def chat_with_tutor(self, message: str) -> Dict[str, str]:
         user_emotion = analyze_emotion(message)
@@ -88,7 +88,5 @@ class AITutorService:
         ], "high")
         return summary
 
-ai_tutor_service = AITutorService()
-
-def get_ai_tutor_service() -> AITutorService:
-    return ai_tutor_service
+def get_ai_tutor_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> AITutorService:
+    return AITutorService(llm_orchestrator)
