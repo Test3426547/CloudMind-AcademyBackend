@@ -1,4 +1,5 @@
 import os
+import logging
 from openai import OpenAI
 from typing import Dict, Any, Optional, List
 
@@ -12,25 +13,28 @@ class LLMOrchestrator:
                 "HTTP-Referer": "https://cloudmindacademy.com"  # Replace with your actual domain
             }
         )
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
     def choose_model(self, task_complexity: str) -> str:
         if task_complexity == "high":
-            return "openai/gpt-4o"
+            return "anthropic/claude-3-opus"
         elif task_complexity == "medium":
             return "anthropic/claude-3-sonnet"
         else:
-            return "openai/gpt-4o-mini"
+            return "anthropic/claude-3-haiku"
 
     def process_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
         model = self.choose_model(task_complexity)
         try:
+            self.logger.info(f"Processing request with model: {model}")
             response = self.client.chat.completions.create(
                 model=model,
                 messages=messages
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"Error processing request: {str(e)}")
+            self.logger.error(f"Error processing request: {str(e)}")
             return None
 
 llm_orchestrator = LLMOrchestrator()

@@ -48,12 +48,19 @@ class CodingChallengesService:
         }}
         """
 
-        evaluation = self.llm_orchestrator.process_request([
+        response = self.llm_orchestrator.process_request([
             {"role": "system", "content": "You are an AI code evaluator."},
             {"role": "user", "content": prompt}
         ], "high")
 
-        return eval(evaluation)
+        if response is None:
+            return {"error": "Failed to evaluate code submission"}
+
+        try:
+            evaluation = eval(response)
+            return evaluation
+        except Exception as e:
+            return {"error": f"Failed to parse evaluation response: {str(e)}"}
 
     async def get_leaderboard(self, challenge_id: str) -> List[Dict[str, Any]]:
         if challenge_id not in self.submissions:

@@ -30,7 +30,13 @@ class GradingService:
             {"role": "user", "content": prompt}
         ], "high")
 
-        return eval(response)
+        if response is None:
+            return {"error": "Failed to grade assignment"}
+
+        try:
+            return eval(response)
+        except Exception as e:
+            return {"error": f"Failed to parse grading response: {str(e)}"}
 
     async def generate_quiz(self, course_content: str, difficulty: str, num_questions: int) -> List[Dict[str, Any]]:
         prompt = f"""
@@ -56,7 +62,13 @@ class GradingService:
             {"role": "user", "content": prompt}
         ], "high")
 
-        return eval(response)
+        if response is None:
+            return [{"error": "Failed to generate quiz"}]
+
+        try:
+            return eval(response)
+        except Exception as e:
+            return [{"error": f"Failed to parse quiz response: {str(e)}"}]
 
 def get_grading_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> GradingService:
     return GradingService(llm_orchestrator)

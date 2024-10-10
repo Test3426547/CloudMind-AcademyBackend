@@ -15,6 +15,9 @@ class AITutorService:
             {"role": "user", "content": prompt}
         ], "medium")
         
+        if response is None:
+            return {"error": "Failed to generate AI tutor response"}
+        
         ai_emotion = analyze_emotion(response)
         
         return {
@@ -30,6 +33,9 @@ class AITutorService:
             {"role": "system", "content": "You are an AI tutor explaining concepts in simple terms."},
             {"role": "user", "content": prompt}
         ], "medium")
+        
+        if explanation is None:
+            return {"error": "Failed to generate concept explanation"}
         
         return {
             "user_emotion": user_emotion,
@@ -62,6 +68,10 @@ class AITutorService:
         messages.append({"role": "user", "content": message})
 
         response = self.llm_orchestrator.process_request(messages, "high")
+        
+        if response is None:
+            return "I apologize, but I'm having trouble generating a response at the moment. Please try again later."
+        
         return response
 
     async def summarize_collaboration(self, messages: List[str]) -> str:
@@ -86,6 +96,10 @@ class AITutorService:
         summary = self.llm_orchestrator.process_request([
             {"role": "system", "content": formatted_prompt}
         ], "high")
+        
+        if summary is None:
+            return "I apologize, but I'm having trouble generating a summary at the moment. Please try again later."
+        
         return summary
 
 def get_ai_tutor_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> AITutorService:
