@@ -11,6 +11,7 @@ import CourseListScreen from './src/screens/CourseListScreen';
 import AITutorScreen from './src/screens/AITutorScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import ARVRScreen from './src/screens/ARVRScreen';
+import CodingChallengesScreen from './src/screens/CodingChallengesScreen';
 import { offlineSyncService } from './src/services/offline_sync';
 
 const Stack = createStackNavigator();
@@ -43,6 +44,7 @@ const MainTabs = () => (
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Courses" component={CourseListScreen} />
       <Tab.Screen name="AI Tutor" component={AITutorScreen} />
+      <Tab.Screen name="Challenges" component={CodingChallengesScreen} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="AR/VR" component={ARVRScreen} />
     </Tab.Navigator>

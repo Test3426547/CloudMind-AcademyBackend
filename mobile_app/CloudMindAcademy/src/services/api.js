@@ -126,4 +126,31 @@ export const commentOnContent = async (contentType, contentId, comment) => {
   }
 };
 
+export const getCodingChallenges = async () => {
+  try {
+    const response = await api.get('/coding-challenges');
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const submitCodingChallenge = async (challengeId, userCode) => {
+  try {
+    const response = await api.post('/coding-challenges/submit', { challenge_id: challengeId, user_code: userCode });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getChallengeLeaderboard = async (challengeId) => {
+  try {
+    const response = await api.get(`/coding-challenges/leaderboard/${challengeId}`);
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
 export default api;
