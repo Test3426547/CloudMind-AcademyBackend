@@ -1,3 +1,7 @@
+import numpy as np
+import torch
+import tensorflow as tf
+
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,7 +46,7 @@ app.include_router(course_feedback.router, prefix="/api/v1")
 app.include_router(course_prerequisite.router, prefix="/api/v1")
 app.include_router(data_visualization.router, prefix="/api/v1")
 app.include_router(openrouter.router, prefix="/api/v1")
-app.include_router(ai_model_training.router, prefix="/api/v1")  # Add the new AI Model Training router
+app.include_router(ai_model_training.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
@@ -54,6 +58,26 @@ def get_routes():
     for route in app.routes:
         routes.append(f"{route.methods} {route.path}")
     return {"routes": routes}
+
+@app.get("/test_ml_libraries")
+def test_ml_libraries():
+    # Test NumPy
+    np_array = np.array([1, 2, 3, 4, 5])
+    np_result = np.mean(np_array)
+
+    # Test PyTorch
+    torch_tensor = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0])  # Changed to floating-point tensor
+    torch_result = torch.mean(torch_tensor).item()
+
+    # Test TensorFlow
+    tf_tensor = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0])
+    tf_result = tf.reduce_mean(tf_tensor).numpy()
+
+    return {
+        "numpy_result": float(np_result),  # Ensure all results are float
+        "pytorch_result": float(torch_result),
+        "tensorflow_result": float(tf_result)
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

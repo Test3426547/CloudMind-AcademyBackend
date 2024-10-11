@@ -1,17 +1,19 @@
+import numpy as np
+import torch
+import tensorflow as tf
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
 from datasets import load_dataset, Dataset
 from sklearn.model_selection import train_test_split
-import torch
 import os
 import pandas as pd
-import numpy as np
 
 class AIModelTrainingService:
     def __init__(self):
         self.model = None
         self.tokenizer = None
+        self.tf_model = None
 
-    async def train_model(self, dataset_name=None, num_labels=2, model_name="distilbert-base-uncased", epochs=3, local_dataset_path=None):
+    async def train_advanced_model(self, dataset_name=None, num_labels=2, epochs=3, local_dataset_path=None):
         if local_dataset_path:
             dataset = self._load_local_dataset(local_dataset_path)
         elif dataset_name:
@@ -24,19 +26,23 @@ class AIModelTrainingService:
         # Split dataset
         train_texts, val_texts, train_labels, val_labels = train_test_split(train_texts, train_labels, test_size=0.2)
 
-        # Load tokenizer and model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=num_labels)
+        # NumPy preprocessing
+        train_labels_np = np.array(train_labels)
+        val_labels_np = np.array(val_labels)
+
+        # PyTorch model
+        self.tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+        self.model = AutoModelForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=num_labels)
 
         # Tokenize datasets
         train_encodings = self.tokenizer(train_texts, truncation=True, padding=True)
         val_encodings = self.tokenizer(val_texts, truncation=True, padding=True)
 
-        # Create torch datasets
-        train_dataset = AIModelTrainingService.TorchDataset(train_encodings, train_labels)
-        val_dataset = AIModelTrainingService.TorchDataset(val_encodings, val_labels)
+        # Create PyTorch datasets
+        train_dataset = self.TorchDataset(train_encodings, train_labels_np)
+        val_dataset = self.TorchDataset(val_encodings, val_labels_np)
 
-        # Set up training arguments
+        # Train PyTorch model
         training_args = TrainingArguments(
             output_dir="./results",
             num_train_epochs=epochs,
@@ -52,7 +58,6 @@ class AIModelTrainingService:
             load_best_model_at_end=True,
         )
 
-        # Create Trainer
         trainer = Trainer(
             model=self.model,
             args=training_args,
@@ -60,40 +65,70 @@ class AIModelTrainingService:
             eval_dataset=val_dataset
         )
 
-        # Train the model
         trainer.train()
 
-        # Save the model
-        self.model.save_pretrained("./trained_model")
-        self.tokenizer.save_pretrained("./trained_model")
+        # TensorFlow model
+        self.tf_model = tf.keras.Sequential([
+            tf.keras.layers.Input(shape=(768,)),
+            tf.keras.layers.Dense(128, activation='relu'),
+            tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(num_labels, activation='softmax')
+        ])
 
-        # Evaluate the model
-        eval_results = trainer.evaluate()
+        self.tf_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+        # Convert PyTorch embeddings to TensorFlow
+        with torch.no_grad():
+            train_embeddings = self.model.distilbert(torch.tensor(train_dataset.encodings['input_ids'])).last_hidden_state[:, 0, :].numpy()
+            val_embeddings = self.model.distilbert(torch.tensor(val_dataset.encodings['input_ids'])).last_hidden_state[:, 0, :].numpy()
+
+        # Train TensorFlow model
+        history = self.tf_model.fit(
+            train_embeddings, train_labels_np,
+            epochs=epochs,
+            validation_data=(val_embeddings, val_labels_np),
+            verbose=1
+        )
+
+        # Evaluate the models
+        torch_eval_results = trainer.evaluate()
+        tf_eval_results = self.tf_model.evaluate(val_embeddings, val_labels_np)
 
         return {
-            "message": "Model training completed and saved.",
-            "eval_results": eval_results
+            "message": "Advanced model training completed.",
+            "torch_eval_results": torch_eval_results,
+            "tf_eval_results": {
+                "loss": tf_eval_results[0],
+                "accuracy": tf_eval_results[1]
+            }
         }
 
-    async def predict(self, text):
-        if self.model is None or self.tokenizer is None:
-            raise ValueError("Model not trained. Please train the model first.")
+    async def predict_advanced(self, text):
+        if self.model is None or self.tokenizer is None or self.tf_model is None:
+            raise ValueError("Models not trained. Please train the advanced model first.")
 
+        # PyTorch prediction
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True)
-        outputs = self.model(**inputs)
-        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-        return probs.tolist()[0]
+        with torch.no_grad():
+            torch_outputs = self.model(**inputs)
+            torch_probs = torch.nn.functional.softmax(torch_outputs.logits, dim=-1)
+
+        # TensorFlow prediction
+        tf_inputs = self.model.distilbert(inputs['input_ids']).last_hidden_state[:, 0, :].numpy()
+        tf_probs = self.tf_model.predict(tf_inputs)
+
+        # Combine predictions (simple average)
+        combined_probs = (torch_probs.numpy() + tf_probs) / 2
+
+        return {
+            "torch_prediction": torch_probs.tolist()[0],
+            "tf_prediction": tf_probs.tolist()[0],
+            "combined_prediction": combined_probs.tolist()[0]
+        }
 
     def _load_local_dataset(self, file_path):
-        if file_path.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        elif file_path.endswith('.json'):
-            df = pd.read_json(file_path)
-        else:
-            raise ValueError("Unsupported file format. Please use CSV or JSON.")
-
-        dataset = Dataset.from_pandas(df)
-        return dataset.train_test_split(test_size=0.2)
+        df = pd.read_csv(file_path)
+        return Dataset.from_pandas(df)
 
     class TorchDataset(torch.utils.data.Dataset):
         def __init__(self, encodings, labels):
