@@ -20,6 +20,11 @@ import cv2
 import numpy as np
 import time
 from ratelimit import limits, sleep_and_retry
+import logging
+from cachetools import TTLCache
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class WebScrapingService:
     def __init__(self):
@@ -40,6 +45,9 @@ class WebScrapingService:
         # Initialize sentence transformer model
         self.sentence_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
+        # Initialize cache
+        self.cache = TTLCache(maxsize=100, ttl=3600)  # Cache for 1 hour
+
     @sleep_and_retry
     @limits(calls=5, period=60)  # Rate limit: 5 calls per minute
     async def scrape_documentation(self, provider: str, topic: Optional[str] = None) -> Dict[str, Any]:
@@ -48,6 +56,11 @@ class WebScrapingService:
 
         base_url = self.providers[provider]
         url = f"{base_url}{topic}" if topic else base_url
+
+        cache_key = f"{provider}_{topic}"
+        if cache_key in self.cache:
+            logger.info(f"Returning cached result for {cache_key}")
+            return self.cache[cache_key]
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -83,7 +96,7 @@ class WebScrapingService:
                 "num_chunks": len(chunked_content)
             })
 
-            return {
+            result = {
                 "content": content,
                 "url": url,
                 "screenshot": screenshot,
@@ -92,6 +105,9 @@ class WebScrapingService:
                 "vectorized_content": vectorized_content,
                 "chunked_content": chunked_content
             }
+
+            self.cache[cache_key] = result
+            return result
         except Exception as e:
             self.log_error("scrape_documentation", str(e), {"provider": provider, "topic": topic, "url": url})
             raise
@@ -153,7 +169,7 @@ class WebScrapingService:
             }
             self.supabase.table("data_transformations").insert(log_entry).execute()
         except Exception as e:
-            print(f"Error logging data transformation: {str(e)}")
+            logger.error(f"Error logging data transformation: {str(e)}")
 
     def log_error(self, operation: str, error_message: str, context: Dict[str, Any] = None):
         try:
@@ -165,7 +181,18 @@ class WebScrapingService:
             }
             self.supabase.table("error_logs").insert(log_entry).execute()
         except Exception as e:
-            print(f"Error logging error: {str(e)}")
+            logger.error(f"Error logging error: {str(e)}")
+
+    async def batch_scrape_documentation(self, provider: str, topics: List[str]) -> List[Dict[str, Any]]:
+        results = []
+        for topic in topics:
+            try:
+                result = await self.scrape_documentation(provider, topic)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error scraping {provider} documentation for topic {topic}: {str(e)}")
+                results.append({"error": str(e), "provider": provider, "topic": topic})
+        return results
 
 web_scraping_service = WebScrapingService()
 
