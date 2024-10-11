@@ -1,36 +1,33 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { signInWithOAuth } from '../services/api';
 
 const LoginScreen = ({ navigation }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  const handleLogin = () => {
-    // TODO: Implement login logic
-    console.log('Login with:', email, password);
-    navigation.navigate('Home');
+  const handleOAuthLogin = async (provider) => {
+    try {
+      const { user, session } = await signInWithOAuth(provider);
+      if (user && session) {
+        navigation.navigate('Main');
+      }
+    } catch (error) {
+      console.error('Error during OAuth login:', error);
+    }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
+      <Text style={styles.title}>Welcome to CloudMind Academy</Text>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => handleOAuthLogin('google')}
+      >
+        <Text style={styles.buttonText}>Sign in with Google</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => handleOAuthLogin('github')}
+      >
+        <Text style={styles.buttonText}>Sign in with GitHub</Text>
       </TouchableOpacity>
     </View>
   );
@@ -48,24 +45,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
   },
-  input: {
-    width: '80%',
-    height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    borderRadius: 5,
-    marginBottom: 10,
-    paddingHorizontal: 10,
-  },
   button: {
     backgroundColor: '#007AFF',
     padding: 10,
     borderRadius: 5,
     marginTop: 10,
+    width: 200,
   },
   buttonText: {
     color: 'white',
     fontSize: 16,
+    textAlign: 'center',
   },
 });
 

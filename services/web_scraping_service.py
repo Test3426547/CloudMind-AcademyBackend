@@ -4,8 +4,7 @@ from bs4 import BeautifulSoup
 from typing import Dict, List, Optional, Any
 import asyncio
 import aiohttp
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from playwright.async_api import async_playwright
 from PIL import Image
 import io
 import base64
@@ -28,11 +27,6 @@ class WebScrapingService:
             "gcp": "https://cloud.google.com/docs/"
         }
         self.text_embedding_service = get_text_embedding_service()
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        self.driver = webdriver.Chrome(options=chrome_options)
         
         # Initialize Reflection-Llama model
         self.tokenizer = AutoTokenizer.from_pretrained("mattshumer/Reflection-Llama-3.1-70B")
@@ -58,7 +52,7 @@ class WebScrapingService:
             if not content:
                 return {"error": "No content found"}
 
-            screenshot = self.capture_screenshot(url)
+            screenshot = await self.capture_screenshot(url)
             embedding = await self.text_embedding_service.get_embedding(content)
 
             # Validate screenshot
@@ -92,6 +86,15 @@ class WebScrapingService:
         except Exception as e:
             return {"error": str(e)}
 
+    async def capture_screenshot(self, url: str) -> str:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            await page.goto(url)
+            screenshot = await page.screenshot(type='png')
+            await browser.close()
+            return base64.b64encode(screenshot).decode('utf-8')
+
     def validate_screenshot(self, screenshot: str) -> bool:
         # Decode base64 screenshot
         screenshot_bytes = base64.b64decode(screenshot)
@@ -119,8 +122,6 @@ class WebScrapingService:
     def chunk_content(self, content: str, chunk_size: int = 1000) -> List[str]:
         return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
 
-    # ... (keep other methods unchanged)
-
     def log_data_transformation(self, operation: str, data: Dict[str, Any]):
         log_entry = {
             "operation": operation,
@@ -128,10 +129,6 @@ class WebScrapingService:
             "data": json.dumps(data)
         }
         self.supabase.table("data_transformations").insert(log_entry).execute()
-
-    def __del__(self):
-        if hasattr(self, 'driver'):
-            self.driver.quit()
 
 web_scraping_service = WebScrapingService()
 

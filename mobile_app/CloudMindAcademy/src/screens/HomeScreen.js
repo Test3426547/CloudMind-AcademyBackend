@@ -1,47 +1,63 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { getProductivityDashboard } from '../services/api';
 
-const HomeScreen = ({ navigation }) => {
+const HomeScreen = () => {
+  const [dashboardData, setDashboardData] = useState(null);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const data = await getProductivityDashboard();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    }
+  };
+
+  if (!dashboardData) {
+    return <Text>Loading...</Text>;
+  }
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.title}>Welcome to CloudMind Academy</Text>
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => navigation.navigate('CourseList')}
-      >
-        <Text style={styles.buttonText}>View Courses</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() => navigation.navigate('AITutor')}
-      >
-        <Text style={styles.buttonText}>Chat with AI Tutor</Text>
-      </TouchableOpacity>
-    </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Productivity Overview</Text>
+        <Text>Total Time: {(dashboardData.analytics.total_time / 3600).toFixed(2)} hours</Text>
+        <Text>Productivity Score: {dashboardData.analytics.productivity_score.toFixed(2)}/100</Text>
+        <Text>Productivity Trend: {dashboardData.analytics.productivity_trend}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Recent Activities</Text>
+        {dashboardData.recent_entries.map((entry, index) => (
+          <Text key={index}>{entry.description} - {(entry.duration / 60).toFixed(2)} minutes</Text>
+        ))}
+      </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5FCFF',
+    padding: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 20,
   },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
+  section: {
+    marginBottom: 20,
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
 });
 

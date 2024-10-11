@@ -12,6 +12,8 @@ import AITutorScreen from './src/screens/AITutorScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import ARVRScreen from './src/screens/ARVRScreen';
 import CodingChallengesScreen from './src/screens/CodingChallengesScreen';
+import TimeTrackingScreen from './src/screens/TimeTrackingScreen';
+import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
 import { offlineSyncService } from './src/services/offline_sync';
 
 const Stack = createStackNavigator();
@@ -47,6 +49,7 @@ const MainTabs = () => (
       <Tab.Screen name="Challenges" component={CodingChallengesScreen} />
       <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="AR/VR" component={ARVRScreen} />
+      <Tab.Screen name="Time Tracking" component={TimeTrackingScreen} />
     </Tab.Navigator>
   </>
 );
@@ -67,6 +70,7 @@ const App = () => {
       <Stack.Navigator initialRouteName="Login">
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
+        <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ title: 'Notification Settings' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
