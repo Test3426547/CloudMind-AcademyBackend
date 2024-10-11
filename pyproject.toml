@@ -9,6 +9,7 @@ dependencies = [
     "anthropic>=0.36.0",
     "beautifulsoup4>=4.12.3",
     "bert-for-tf2",
+    "cachetools",
     "clip",
     "datasets>=3.0.1",
     "email-validator>=2.2.0",
@@ -30,6 +31,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "python-levenshtein>=0.26.0",
     "python-multipart>=0.0.12",
+    "ratelimit",
     "requests>=2.32.3",
     "scikit-learn>=1.5.2",
     "selenium>=4.25.0",
@@ -48,4 +50,5 @@ dependencies = [
     "uvicorn>=0.31.1",
     "web3==6.15.1",
     "websockets>=13.1",
+    "wheel",
 ]
