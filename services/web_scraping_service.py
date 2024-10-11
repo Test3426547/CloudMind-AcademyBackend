@@ -1,63 +1,89 @@
 import trafilatura
-import numpy as np
-from typing import List, Dict, Tuple
-from datetime import datetime
-from services.text_embedding_service import get_text_embedding_service
+import requests
+from bs4 import BeautifulSoup
+from typing import Dict, List, Optional
+import asyncio
+import aiohttp
 
 class WebScrapingService:
     def __init__(self):
-        self.scraped_data = {}
-        self.text_embedding_service = get_text_embedding_service()
+        self.providers = {
+            "aws": "https://docs.aws.amazon.com/",
+            "azure": "https://docs.microsoft.com/en-us/azure/",
+            "gcp": "https://cloud.google.com/docs/"
+        }
 
-    async def scrape_website(self, url: str) -> Tuple[str, bool]:
+    async def scrape_documentation(self, provider: str, topic: Optional[str] = None) -> Dict[str, str]:
+        if provider not in self.providers:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+        base_url = self.providers[provider]
+        url = f"{base_url}{topic}" if topic else base_url
+
         try:
             downloaded = trafilatura.fetch_url(url)
-            text = trafilatura.extract(downloaded)
-            
-            if text:
-                word_count = len(text.split())
-                timestamp = datetime.now().isoformat()
-                
-                if url not in self.scraped_data:
-                    self.scraped_data[url] = []
-                
-                self.scraped_data[url].append((timestamp, word_count))
-                
-                is_anomaly = self.detect_anomaly(url, word_count)
-                
-                # Get embedding and store in Supabase
-                embedding = await self.text_embedding_service.get_embedding(text)
-                await self.text_embedding_service.store_embedding(url, text, embedding)
-                
-                return text, is_anomaly
-            else:
-                return "No content extracted", False
+            content = trafilatura.extract(downloaded, include_links=True, include_tables=True)
+
+            if not content:
+                return {"error": "No content found"}
+
+            return {"content": content, "url": url}
         except Exception as e:
-            return f"Error scraping website: {str(e)}", False
+            return {"error": str(e)}
 
-    def detect_anomaly(self, url: str, word_count: int) -> bool:
-        if len(self.scraped_data[url]) < 5:
-            return False
-        
-        historical_counts = [count for _, count in self.scraped_data[url][:-1]]
-        mean = np.mean(historical_counts)
-        std = np.std(historical_counts)
-        
-        if std == 0:
-            return False
-        
-        z_score = (word_count - mean) / std
-        
-        return abs(z_score) > 2  # Consider it an anomaly if z-score is beyond 2 standard deviations
+    async def search_documentation(self, provider: str, query: str) -> List[Dict[str, str]]:
+        if provider not in self.providers:
+            raise ValueError(f"Unsupported provider: {provider}")
 
-    def get_scraping_history(self, url: str) -> List[Dict[str, any]]:
-        if url not in self.scraped_data:
-            return []
-        
-        return [{"timestamp": ts, "word_count": wc} for ts, wc in self.scraped_data[url]]
+        base_url = self.providers[provider]
+        search_url = f"{base_url}search?q={query}"
 
-    async def search_similar_content(self, query: str, limit: int = 5):
-        return await self.text_embedding_service.search_similar_content(query, limit)
+        try:
+            response = requests.get(search_url)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            results = []
+
+            for result in soup.find_all('div', class_='search-result'):
+                title = result.find('h3').text.strip()
+                link = result.find('a')['href']
+                snippet = result.find('p').text.strip()
+                results.append({
+                    "title": title,
+                    "link": link,
+                    "snippet": snippet
+                })
+
+            return results[:5]  # Return top 5 results
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    async def scrape_multiple_pages(self, provider: str, topics: List[str]) -> List[Dict[str, str]]:
+        if provider not in self.providers:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+        base_url = self.providers[provider]
+        results = []
+
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for topic in topics:
+                url = f"{base_url}{topic}"
+                tasks.append(self.fetch_and_extract(session, url))
+            
+            results = await asyncio.gather(*tasks)
+
+        return results
+
+    async def fetch_and_extract(self, session: aiohttp.ClientSession, url: str) -> Dict[str, str]:
+        try:
+            async with session.get(url) as response:
+                html = await response.text()
+                content = trafilatura.extract(html, include_links=True, include_tables=True)
+                if not content:
+                    return {"error": "No content found", "url": url}
+                return {"content": content, "url": url}
+        except Exception as e:
+            return {"error": str(e), "url": url}
 
 web_scraping_service = WebScrapingService()
 

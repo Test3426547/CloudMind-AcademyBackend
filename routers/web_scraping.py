@@ -1,50 +1,65 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from services.web_scraping_service import get_web_scraping_service, WebScrapingService
-from typing import Dict, List
-from pydantic import BaseModel, HttpUrl
+from models.user import User
+from services.web_scraping_service import WebScrapingService, get_web_scraping_service
+from typing import List, Optional
+from pydantic import BaseModel
 
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-class ScrapeRequest(BaseModel):
-    url: HttpUrl
-
-class ScrapeResponse(BaseModel):
+class ScrapingResult(BaseModel):
     content: str
-    is_anomaly: bool
-
-class ScrapingHistoryItem(BaseModel):
-    timestamp: str
-    word_count: int
-
-class ScrapingHistoryResponse(BaseModel):
-    history: List[ScrapingHistoryItem]
-
-class SearchRequest(BaseModel):
-    query: str
-    limit: int = 5
-
-class SearchResultItem(BaseModel):
     url: str
-    content: str
-    similarity: float
 
-class SearchResponse(BaseModel):
-    results: List[SearchResultItem]
+class SearchResult(BaseModel):
+    title: str
+    link: str
+    snippet: str
 
-@router.post("/scrape", response_model=ScrapeResponse)
-async def scrape_website(request: ScrapeRequest, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
-    content, is_anomaly = await service.scrape_website(str(request.url))
-    return ScrapeResponse(content=content, is_anomaly=is_anomaly)
+class MultipleScrapingRequest(BaseModel):
+    provider: str
+    topics: List[str]
 
-@router.get("/history", response_model=ScrapingHistoryResponse)
-async def get_scraping_history(url: HttpUrl, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
-    history = service.get_scraping_history(str(url))
-    return ScrapingHistoryResponse(history=[ScrapingHistoryItem(**item) for item in history])
+@router.get("/scrape/{provider}")
+async def scrape_documentation(
+    provider: str,
+    topic: Optional[str] = None,
+    user: User = Depends(oauth2_scheme),
+    scraping_service: WebScrapingService = Depends(get_web_scraping_service)
+):
+    try:
+        result = await scraping_service.scrape_documentation(provider, topic)
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return ScrapingResult(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/search", response_model=SearchResponse)
-async def search_similar_content(request: SearchRequest, token: str = Depends(oauth2_scheme), service: WebScrapingService = Depends(get_web_scraping_service)):
-    results = await service.search_similar_content(request.query, request.limit)
-    return SearchResponse(results=[SearchResultItem(**item) for item in results])
+@router.get("/search/{provider}", response_model=List[SearchResult])
+async def search_documentation(
+    provider: str,
+    query: str,
+    user: User = Depends(oauth2_scheme),
+    scraping_service: WebScrapingService = Depends(get_web_scraping_service)
+):
+    try:
+        results = await scraping_service.search_documentation(provider, query)
+        if results and "error" in results[0]:
+            raise HTTPException(status_code=400, detail=results[0]["error"])
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/scrape-multiple", response_model=List[ScrapingResult])
+async def scrape_multiple_pages(
+    request: MultipleScrapingRequest,
+    user: User = Depends(oauth2_scheme),
+    scraping_service: WebScrapingService = Depends(get_web_scraping_service)
+):
+    try:
+        results = await scraping_service.scrape_multiple_pages(request.provider, request.topics)
+        return [ScrapingResult(**result) for result in results if "error" not in result]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
