@@ -4,6 +4,7 @@ from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
 from fastapi import Depends, HTTPException
 import logging
 from functools import lru_cache
+from ratelimit import limits, sleep_and_retry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +64,8 @@ class PlagiarismDetectionService:
             logger.error(f"Error in compare_texts: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error in plagiarism detection: {str(e)}")
 
+    @sleep_and_retry
+    @limits(calls=10, period=60)  # Rate limit: 10 calls per minute
     def detect_plagiarism(self, submitted_text: str, original_texts: List[str]) -> Dict[str, any]:
         """
         Detect plagiarism by comparing the submitted text with a list of original texts.
