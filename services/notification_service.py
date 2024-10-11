@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 from models.notification import NotificationPreference, Notification
 from fastapi import HTTPException
 import logging
+from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -11,19 +12,27 @@ class NotificationService:
     def __init__(self):
         self.notifications: Dict[str, List[Notification]] = {}
         self.preferences: Dict[str, NotificationPreference] = {}
+        self.cache = TTLCache(maxsize=1000, ttl=3600)  # Cache for 1 hour
 
     async def create_or_update_preferences(self, user_id: str, preferences: Dict) -> NotificationPreference:
         try:
             updated_preferences = NotificationPreference(user_id=user_id, **preferences)
             self.preferences[user_id] = updated_preferences
+            self.cache.pop(f"preferences_{user_id}", None)  # Invalidate cache
             return updated_preferences
         except Exception as e:
             logger.error(f"Error creating or updating preferences: {str(e)}")
             raise HTTPException(status_code=500, detail="An error occurred while updating preferences")
 
     async def get_user_preferences(self, user_id: str) -> NotificationPreference:
+        cache_key = f"preferences_{user_id}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         try:
-            return self.preferences.get(user_id, NotificationPreference(user_id=user_id))
+            preferences = self.preferences.get(user_id, NotificationPreference(user_id=user_id))
+            self.cache[cache_key] = preferences
+            return preferences
         except Exception as e:
             logger.error(f"Error getting user preferences: {str(e)}")
             raise HTTPException(status_code=500, detail="An error occurred while retrieving preferences")
@@ -49,6 +58,7 @@ class NotificationService:
             if user_id not in self.notifications:
                 self.notifications[user_id] = []
             self.notifications[user_id].append(notification)
+            self.cache.pop(f"notifications_{user_id}", None)  # Invalidate cache
             return notification
         except Exception as e:
             logger.error(f"Error creating notification: {str(e)}")
@@ -68,11 +78,17 @@ class NotificationService:
         return True
 
     async def get_user_notifications(self, user_id: str, filter_read: bool = False, limit: int = 50, offset: int = 0) -> List[Notification]:
+        cache_key = f"notifications_{user_id}_{filter_read}_{limit}_{offset}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         try:
             notifications = self.notifications.get(user_id, [])
             if filter_read:
                 notifications = [n for n in notifications if not n.is_read]
-            return notifications[offset:offset+limit]
+            result = notifications[offset:offset+limit]
+            self.cache[cache_key] = result
+            return result
         except Exception as e:
             logger.error(f"Error getting user notifications: {str(e)}")
             raise HTTPException(status_code=500, detail="An error occurred while retrieving notifications")
@@ -83,6 +99,7 @@ class NotificationService:
             for notification in user_notifications:
                 if notification.id == notification_id:
                     notification.is_read = True
+                    self.cache.pop(f"notifications_{user_id}", None)  # Invalidate cache
                     return True
             return False
         except Exception as e:
@@ -95,6 +112,7 @@ class NotificationService:
             for index, notification in enumerate(user_notifications):
                 if notification.id == notification_id:
                     del user_notifications[index]
+                    self.cache.pop(f"notifications_{user_id}", None)  # Invalidate cache
                     return True
             return False
         except Exception as e:
@@ -102,10 +120,16 @@ class NotificationService:
             raise HTTPException(status_code=500, detail="An error occurred while deleting the notification")
 
     async def get_notifications_by_type(self, user_id: str, notification_type: str, limit: int = 50, offset: int = 0) -> List[Notification]:
+        cache_key = f"notifications_{user_id}_{notification_type}_{limit}_{offset}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
         try:
             user_notifications = self.notifications.get(user_id, [])
             filtered_notifications = [n for n in user_notifications if n.notification_type == notification_type]
-            return filtered_notifications[offset:offset+limit]
+            result = filtered_notifications[offset:offset+limit]
+            self.cache[cache_key] = result
+            return result
         except Exception as e:
             logger.error(f"Error getting notifications by type: {str(e)}")
             raise HTTPException(status_code=500, detail="An error occurred while retrieving notifications by type")
@@ -115,7 +139,9 @@ class NotificationService:
             user_notifications = self.notifications.get(user_id, [])
             initial_count = len(user_notifications)
             self.notifications[user_id] = [n for n in user_notifications if n.id not in notification_ids]
-            return initial_count - len(self.notifications[user_id])
+            deleted_count = initial_count - len(self.notifications[user_id])
+            self.cache.pop(f"notifications_{user_id}", None)  # Invalidate cache
+            return deleted_count
         except Exception as e:
             logger.error(f"Error bulk deleting notifications: {str(e)}")
             raise HTTPException(status_code=500, detail="An error occurred while bulk deleting notifications")
