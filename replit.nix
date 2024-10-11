@@ -1,5 +1,10 @@
 {pkgs}: {
   deps = [
+    pkgs.which
+    pkgs.libpng
+    pkgs.libjpeg_turbo
+    pkgs.ffmpeg-full
+    pkgs.pkg-config
     pkgs.playwright-driver
     pkgs.gitFull
     pkgs.zlib
