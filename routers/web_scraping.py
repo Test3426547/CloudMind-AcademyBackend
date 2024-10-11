@@ -12,17 +12,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 class ScrapingResult(BaseModel):
     content: str
     url: str
+    screenshot: str
+    embedding: List[float]
+    screenshot_valid: bool
+    vectorized_content: List[float]
+    chunked_content: List[str]
 
 class SearchResult(BaseModel):
     title: str
     link: str
     snippet: str
+    screenshot: str
+    embedding: List[float]
+    screenshot_valid: bool
+    vectorized_content: List[float]
+    chunked_content: List[str]
 
 class MultipleScrapingRequest(BaseModel):
     provider: str
     topics: List[str]
 
-@router.get("/scrape/{provider}")
+@router.get("/scrape/{provider}", response_model=ScrapingResult)
 async def scrape_documentation(
     provider: str,
     topic: Optional[str] = None,
@@ -48,7 +58,7 @@ async def search_documentation(
         results = await scraping_service.search_documentation(provider, query)
         if results and "error" in results[0]:
             raise HTTPException(status_code=400, detail=results[0]["error"])
-        return results
+        return [SearchResult(**result) for result in results]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
