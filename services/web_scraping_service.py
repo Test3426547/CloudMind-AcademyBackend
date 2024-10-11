@@ -18,6 +18,8 @@ from datetime import datetime
 from sentence_transformers import SentenceTransformer
 import cv2
 import numpy as np
+import time
+from ratelimit import limits, sleep_and_retry
 
 class WebScrapingService:
     def __init__(self):
@@ -38,6 +40,8 @@ class WebScrapingService:
         # Initialize sentence transformer model
         self.sentence_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
+    @sleep_and_retry
+    @limits(calls=5, period=60)  # Rate limit: 5 calls per minute
     async def scrape_documentation(self, provider: str, topic: Optional[str] = None) -> Dict[str, Any]:
         if provider not in self.providers:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -46,11 +50,16 @@ class WebScrapingService:
         url = f"{base_url}{topic}" if topic else base_url
 
         try:
-            downloaded = trafilatura.fetch_url(url)
-            content = trafilatura.extract(downloaded, include_links=True, include_tables=True)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        raise Exception(f"Failed to fetch URL: {url}. Status code: {response.status}")
+                    html_content = await response.text()
+
+            content = trafilatura.extract(html_content, include_links=True, include_tables=True)
 
             if not content:
-                return {"error": "No content found"}
+                raise Exception("No content found")
 
             screenshot = await self.capture_screenshot(url)
             embedding = await self.text_embedding_service.get_embedding(content)
@@ -84,51 +93,79 @@ class WebScrapingService:
                 "chunked_content": chunked_content
             }
         except Exception as e:
-            return {"error": str(e)}
+            self.log_error("scrape_documentation", str(e), {"provider": provider, "topic": topic, "url": url})
+            raise
 
     async def capture_screenshot(self, url: str) -> str:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page()
-            await page.goto(url)
-            screenshot = await page.screenshot(type='png')
-            await browser.close()
-            return base64.b64encode(screenshot).decode('utf-8')
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle")
+                screenshot = await page.screenshot(type='png')
+                await browser.close()
+                return base64.b64encode(screenshot).decode('utf-8')
+        except Exception as e:
+            self.log_error("capture_screenshot", str(e), {"url": url})
+            raise
 
     def validate_screenshot(self, screenshot: str) -> bool:
-        # Decode base64 screenshot
-        screenshot_bytes = base64.b64decode(screenshot)
-        nparr = np.frombuffer(screenshot_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        try:
+            # Decode base64 screenshot
+            screenshot_bytes = base64.b64decode(screenshot)
+            nparr = np.frombuffer(screenshot_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # Check if the image is not empty
-        if img is None or img.size == 0:
+            # Check if the image is not empty
+            if img is None or img.size == 0:
+                return False
+
+            # Check image dimensions
+            height, width, _ = img.shape
+            if height < 100 or width < 100:
+                return False
+
+            # Check for blank or solid color images
+            if len(np.unique(img)) < 10:
+                return False
+
+            return True
+        except Exception as e:
+            self.log_error("validate_screenshot", str(e))
             return False
-
-        # Check image dimensions
-        height, width, _ = img.shape
-        if height < 100 or width < 100:
-            return False
-
-        # Check for blank or solid color images
-        if len(np.unique(img)) < 10:
-            return False
-
-        return True
 
     def vectorize_content(self, content: str) -> List[float]:
-        return self.sentence_model.encode(content).tolist()
+        try:
+            return self.sentence_model.encode(content).tolist()
+        except Exception as e:
+            self.log_error("vectorize_content", str(e))
+            raise
 
     def chunk_content(self, content: str, chunk_size: int = 1000) -> List[str]:
         return [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
 
     def log_data_transformation(self, operation: str, data: Dict[str, Any]):
-        log_entry = {
-            "operation": operation,
-            "timestamp": datetime.now().isoformat(),
-            "data": json.dumps(data)
-        }
-        self.supabase.table("data_transformations").insert(log_entry).execute()
+        try:
+            log_entry = {
+                "operation": operation,
+                "timestamp": datetime.now().isoformat(),
+                "data": json.dumps(data)
+            }
+            self.supabase.table("data_transformations").insert(log_entry).execute()
+        except Exception as e:
+            print(f"Error logging data transformation: {str(e)}")
+
+    def log_error(self, operation: str, error_message: str, context: Dict[str, Any] = None):
+        try:
+            log_entry = {
+                "operation": operation,
+                "timestamp": datetime.now().isoformat(),
+                "error_message": error_message,
+                "context": json.dumps(context) if context else None
+            }
+            self.supabase.table("error_logs").insert(log_entry).execute()
+        except Exception as e:
+            print(f"Error logging error: {str(e)}")
 
 web_scraping_service = WebScrapingService()
 
