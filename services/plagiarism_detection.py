@@ -4,15 +4,32 @@ from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
 from fastapi import Depends, HTTPException
 import logging
 from functools import lru_cache
-from ratelimit import limits, sleep_and_retry
+import asyncio
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class RateLimiter:
+    def __init__(self, calls: int, period: int):
+        self.calls = calls
+        self.period = period
+        self.timestamps = []
+
+    async def wait(self):
+        now = time.time()
+        self.timestamps = [t for t in self.timestamps if now - t < self.period]
+        if len(self.timestamps) >= self.calls:
+            sleep_time = self.period - (now - self.timestamps[0])
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        self.timestamps.append(time.time())
 
 class PlagiarismDetectionService:
     def __init__(self, llm_orchestrator: LLMOrchestrator):
         self.llm_orchestrator = llm_orchestrator
         self.cache = {}
+        self.rate_limiter = RateLimiter(calls=10, period=60)
 
     def validate_input(self, text: str) -> bool:
         if not text or not isinstance(text, str):
@@ -22,14 +39,7 @@ class PlagiarismDetectionService:
         return True
 
     @lru_cache(maxsize=100)
-    def compare_texts(self, original_text: str, submitted_text: str) -> Tuple[float, str]:
-        """
-        Compare the submitted text with the original text using LLMOrchestrator to detect plagiarism.
-        
-        :param original_text: The original text to compare against
-        :param submitted_text: The text submitted by the user
-        :return: A tuple containing the similarity score and explanation
-        """
+    async def compare_texts(self, original_text: str, submitted_text: str) -> Tuple[float, str]:
         if not self.validate_input(original_text) or not self.validate_input(submitted_text):
             raise ValueError("Invalid input: Both texts must be non-empty strings with at least 10 characters.")
 
@@ -64,16 +74,8 @@ class PlagiarismDetectionService:
             logger.error(f"Error in compare_texts: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error in plagiarism detection: {str(e)}")
 
-    @sleep_and_retry
-    @limits(calls=10, period=60)  # Rate limit: 10 calls per minute
-    def detect_plagiarism(self, submitted_text: str, original_texts: List[str]) -> Dict[str, any]:
-        """
-        Detect plagiarism by comparing the submitted text with a list of original texts.
-        
-        :param submitted_text: The text submitted by the user
-        :param original_texts: A list of original texts to compare against
-        :return: A dictionary containing the plagiarism detection results
-        """
+    async def detect_plagiarism(self, submitted_text: str, original_texts: List[str]) -> Dict[str, any]:
+        await self.rate_limiter.wait()
         if not self.validate_input(submitted_text):
             raise ValueError("Invalid input: Submitted text must be a non-empty string with at least 10 characters.")
         if not original_texts or not all(self.validate_input(text) for text in original_texts):
@@ -85,7 +87,7 @@ class PlagiarismDetectionService:
             if cache_key in self.cache:
                 similarity_score, explanation = self.cache[cache_key]
             else:
-                similarity_score, explanation = self.compare_texts(original_text, submitted_text)
+                similarity_score, explanation = await self.compare_texts(original_text, submitted_text)
                 self.cache[cache_key] = (similarity_score, explanation)
 
             results.append({
@@ -108,13 +110,6 @@ class PlagiarismDetectionService:
         }
 
     async def batch_plagiarism_check(self, submitted_texts: List[str], original_texts: List[str]) -> List[Dict[str, any]]:
-        """
-        Perform plagiarism checks on multiple submitted texts against multiple original texts.
-        
-        :param submitted_texts: A list of texts submitted by users
-        :param original_texts: A list of original texts to compare against
-        :return: A list of dictionaries containing plagiarism detection results for each submitted text
-        """
         if not submitted_texts or not all(self.validate_input(text) for text in submitted_texts):
             raise ValueError("Invalid input: Submitted texts must be a non-empty list of valid strings.")
         if not original_texts or not all(self.validate_input(text) for text in original_texts):
@@ -122,7 +117,7 @@ class PlagiarismDetectionService:
 
         results = []
         for submitted_text in submitted_texts:
-            result = self.detect_plagiarism(submitted_text, original_texts)
+            result = await self.detect_plagiarism(submitted_text, original_texts)
             results.append(result)
 
         return results

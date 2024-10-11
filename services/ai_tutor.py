@@ -4,14 +4,34 @@ from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
 from typing import Dict, List
 import logging
 from functools import lru_cache
-from ratelimit import limits, sleep_and_retry
+import asyncio
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class RateLimiter:
+    def __init__(self, calls: int, period: int):
+        self.calls = calls
+        self.period = period
+        self.timestamps = []
+
+    async def wait(self):
+        now = time.time()
+        self.timestamps = [t for t in self.timestamps if now - t < self.period]
+        if len(self.timestamps) >= self.calls:
+            sleep_time = self.period - (now - self.timestamps[0])
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        self.timestamps.append(time.time())
+
 class AITutorService:
     def __init__(self, llm_orchestrator: LLMOrchestrator):
         self.llm_orchestrator = llm_orchestrator
+        self.chat_rate_limiter = RateLimiter(calls=10, period=60)
+        self.explain_rate_limiter = RateLimiter(calls=10, period=60)
+        self.collaboration_rate_limiter = RateLimiter(calls=5, period=60)
+        self.summary_rate_limiter = RateLimiter(calls=2, period=60)
 
     def validate_input(self, message: str) -> bool:
         if not message or not isinstance(message, str):
@@ -21,9 +41,8 @@ class AITutorService:
         return True
 
     @lru_cache(maxsize=100)
-    @sleep_and_retry
-    @limits(calls=10, period=60)  # Rate limit: 10 calls per minute
     async def chat_with_tutor(self, message: str) -> Dict[str, str]:
+        await self.chat_rate_limiter.wait()
         if not self.validate_input(message):
             raise ValueError("Invalid input: Message must be a non-empty string with at least 5 characters.")
 
@@ -50,9 +69,8 @@ class AITutorService:
             raise HTTPException(status_code=500, detail=f"Error in AI tutor chat: {str(e)}")
 
     @lru_cache(maxsize=100)
-    @sleep_and_retry
-    @limits(calls=10, period=60)  # Rate limit: 10 calls per minute
     async def explain_concept(self, concept: str) -> Dict[str, str]:
+        await self.explain_rate_limiter.wait()
         if not self.validate_input(concept):
             raise ValueError("Invalid input: Concept must be a non-empty string with at least 5 characters.")
 
@@ -75,9 +93,8 @@ class AITutorService:
             logger.error(f"Error in explain_concept: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error in concept explanation: {str(e)}")
 
-    @sleep_and_retry
-    @limits(calls=5, period=60)  # Rate limit: 5 calls per minute
     async def get_collaboration_assistance(self, message: str, context: List[Dict[str, str]] = []) -> str:
+        await self.collaboration_rate_limiter.wait()
         if not self.validate_input(message):
             raise ValueError("Invalid input: Message must be a non-empty string with at least 5 characters.")
 
@@ -116,9 +133,8 @@ class AITutorService:
             logger.error(f"Error in get_collaboration_assistance: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error in collaboration assistance: {str(e)}")
 
-    @sleep_and_retry
-    @limits(calls=2, period=60)  # Rate limit: 2 calls per minute
     async def summarize_collaboration(self, messages: List[str]) -> str:
+        await self.summary_rate_limiter.wait()
         if not messages or not all(self.validate_input(message) for message in messages):
             raise ValueError("Invalid input: Messages must be a non-empty list of valid strings.")
 

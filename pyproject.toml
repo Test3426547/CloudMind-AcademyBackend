@@ -27,6 +27,7 @@ dependencies = [
     "opencv-python-headless>=4.8.1.78",
     "pandas",
     "pillow>=10.4.0",
+    "playwright",
     "plotly>=2.2.3",
     "python-dotenv>=1.0.1",
     "python-levenshtein>=0.26.0",
