@@ -1,173 +1,147 @@
-from fastapi import Depends, HTTPException
-from services.emotion_analysis import analyze_emotion
-from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
-from typing import Dict, List
-import logging
-from functools import lru_cache
 import asyncio
+from typing import List, Dict, Any, Optional
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
+from services.text_embedding_service import TextEmbeddingService, get_text_embedding_service
+from fastapi import HTTPException
+import logging
 import time
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class RateLimiter:
-    def __init__(self, calls: int, period: int):
-        self.calls = calls
-        self.period = period
-        self.timestamps = []
-
-    async def wait(self):
-        now = time.time()
-        self.timestamps = [t for t in self.timestamps if now - t < self.period]
-        if len(self.timestamps) >= self.calls:
-            sleep_time = self.period - (now - self.timestamps[0])
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
-        self.timestamps.append(time.time())
-
 class AITutorService:
-    def __init__(self, llm_orchestrator: LLMOrchestrator):
+    def __init__(self, llm_orchestrator: LLMOrchestrator, text_embedding_service: TextEmbeddingService):
         self.llm_orchestrator = llm_orchestrator
-        self.chat_rate_limiter = RateLimiter(calls=10, period=60)
-        self.explain_rate_limiter = RateLimiter(calls=10, period=60)
-        self.collaboration_rate_limiter = RateLimiter(calls=5, period=60)
-        self.summary_rate_limiter = RateLimiter(calls=2, period=60)
+        self.text_embedding_service = text_embedding_service
+        self.user_contexts = {}
+        self.last_interaction_time = {}
 
-    def validate_input(self, message: str) -> bool:
-        if not message or not isinstance(message, str):
-            return False
-        if len(message.strip()) < 5:  # Arbitrary minimum length
-            return False
-        return True
-
-    @lru_cache(maxsize=100)
-    async def chat_with_tutor(self, message: str) -> Dict[str, str]:
-        await self.chat_rate_limiter.wait()
-        if not self.validate_input(message):
-            raise ValueError("Invalid input: Message must be a non-empty string with at least 5 characters.")
-
+    async def chat_with_tutor(self, user_id: str, message: str) -> Dict[str, Any]:
         try:
-            user_emotion = analyze_emotion(message)
-            prompt = f"User emotion: {user_emotion}\nUser message: {message}\nRespond as an empathetic AI tutor, addressing the user's emotional state:"
-            response = self.llm_orchestrator.process_request([
-                {"role": "system", "content": "You are an empathetic AI tutor."},
-                {"role": "user", "content": prompt}
-            ], "medium")
-            
-            if response is None:
-                raise Exception("Failed to generate AI tutor response")
-            
-            ai_emotion = analyze_emotion(response)
-            
-            return {
-                "user_emotion": user_emotion,
-                "ai_response": response,
-                "ai_emotion": ai_emotion
-            }
+            context = self.user_contexts.get(user_id, [])
+            context.append({"role": "user", "content": message})
+
+            # Implement adaptive response generation based on user's interaction history
+            response_quality = self._determine_response_quality(user_id)
+
+            system_message = (
+                "You are an advanced AI tutor with expertise in various subjects. "
+                f"Provide a {response_quality} response to help the student learn effectively."
+            )
+
+            response = await self.llm_orchestrator.process_request(
+                context,
+                "high",
+                system_message=system_message
+            )
+
+            context.append({"role": "assistant", "content": response})
+            self.user_contexts[user_id] = context[-10:]  # Keep last 10 messages for context
+            self.last_interaction_time[user_id] = time.time()
+
+            return {"response": response, "context": context}
         except Exception as e:
             logger.error(f"Error in chat_with_tutor: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error in AI tutor chat: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred during the chat with the AI tutor")
 
-    @lru_cache(maxsize=100)
-    async def explain_concept(self, concept: str) -> Dict[str, str]:
-        await self.explain_rate_limiter.wait()
-        if not self.validate_input(concept):
-            raise ValueError("Invalid input: Concept must be a non-empty string with at least 5 characters.")
-
+    async def explain_concept(self, concept: str) -> Dict[str, Any]:
         try:
-            user_emotion = analyze_emotion(f"Explain {concept}")
-            prompt = f"User emotion: {user_emotion}\nExplain the following concept in simple terms, considering the user's emotional state: {concept}"
-            explanation = self.llm_orchestrator.process_request([
-                {"role": "system", "content": "You are an AI tutor explaining concepts in simple terms."},
-                {"role": "user", "content": prompt}
-            ], "medium")
+            context = [
+                {"role": "system", "content": "You are an expert tutor. Explain the given concept in detail, providing examples and analogies to aid understanding."},
+                {"role": "user", "content": f"Explain the concept of {concept} in detail."}
+            ]
+
+            explanation = await self.llm_orchestrator.process_request(context, "high")
             
-            if explanation is None:
-                raise Exception("Failed to generate concept explanation")
-            
+            # Generate quiz questions based on the explanation
+            quiz_context = [
+                {"role": "system", "content": "Generate 3 multiple-choice quiz questions based on the following explanation:"},
+                {"role": "user", "content": explanation}
+            ]
+            quiz_questions = await self.llm_orchestrator.process_request(quiz_context, "medium")
+
+            # Generate a mind map for visual learners
+            mind_map_context = [
+                {"role": "system", "content": "Create a textual representation of a mind map for the following concept:"},
+                {"role": "user", "content": explanation}
+            ]
+            mind_map = await self.llm_orchestrator.process_request(mind_map_context, "medium")
+
             return {
-                "user_emotion": user_emotion,
-                "explanation": explanation
+                "concept": concept,
+                "explanation": explanation,
+                "quiz_questions": quiz_questions,
+                "mind_map": mind_map
             }
         except Exception as e:
             logger.error(f"Error in explain_concept: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error in concept explanation: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred while explaining the concept")
 
-    async def get_collaboration_assistance(self, message: str, context: List[Dict[str, str]] = []) -> str:
-        await self.collaboration_rate_limiter.wait()
-        if not self.validate_input(message):
-            raise ValueError("Invalid input: Message must be a non-empty string with at least 5 characters.")
-
+    async def generate_personalized_learning_path(self, user_id: str, subject: str, current_level: str) -> Dict[str, Any]:
         try:
-            system_prompt = """
-            You are an AI assistant in a collaborative learning environment. Your role is to provide helpful insights, 
-            answer questions, and facilitate discussion among students. Please respond to the following message 
-            in a way that encourages further collaboration and learning. Consider the context of previous messages, if provided.
+            context = [
+                {"role": "system", "content": "Generate a personalized learning path for the given subject and current level. Include recommended topics, resources, estimated time for each step, and potential challenges."},
+                {"role": "user", "content": f"Create a detailed learning path for {subject} at {current_level} level."}
+            ]
 
-            Guidelines for your response:
-            1. Address the user's question or comment directly and accurately.
-            2. Encourage further discussion by asking thought-provoking follow-up questions.
-            3. Suggest potential areas for collaboration or group study related to the topic.
-            4. Recommend relevant learning resources or activities when appropriate.
-            5. Promote inclusive and respectful communication among participants.
-            6. If there are misconceptions, gently correct them and provide accurate information.
-            7. Highlight connections between different concepts or ideas mentioned in the discussion.
-            8. Summarize key points if the discussion has been lengthy or complex.
-            9. Encourage participants to share their own experiences or knowledge related to the topic.
-            10. If the topic allows, suggest a small group activity or project that could enhance learning.
-
-            Remember to maintain a supportive and engaging tone throughout your response.
-            """
-
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(context)
-            messages.append({"role": "user", "content": message})
-
-            response = self.llm_orchestrator.process_request(messages, "high")
+            learning_path = await self.llm_orchestrator.process_request(context, "high")
             
-            if response is None:
-                raise Exception("Failed to generate collaboration assistance")
-            
-            return response
+            # Generate milestones and progress tracking suggestions
+            milestone_context = [
+                {"role": "system", "content": "Based on the learning path, suggest key milestones and ways to track progress:"},
+                {"role": "user", "content": learning_path}
+            ]
+            milestones = await self.llm_orchestrator.process_request(milestone_context, "medium")
+
+            return {
+                "user_id": user_id,
+                "subject": subject,
+                "current_level": current_level,
+                "learning_path": learning_path,
+                "milestones": milestones
+            }
         except Exception as e:
-            logger.error(f"Error in get_collaboration_assistance: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error in collaboration assistance: {str(e)}")
+            logger.error(f"Error in generate_personalized_learning_path: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred while generating the personalized learning path")
 
-    async def summarize_collaboration(self, messages: List[str]) -> str:
-        await self.summary_rate_limiter.wait()
-        if not messages or not all(self.validate_input(message) for message in messages):
-            raise ValueError("Invalid input: Messages must be a non-empty list of valid strings.")
-
+    async def analyze_student_performance(self, user_id: str, performance_data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            prompt = """
-            You are an AI assistant tasked with summarizing a collaborative learning session. 
-            Please analyze the following conversation and provide a concise summary that includes:
+            context = [
+                {"role": "system", "content": "Analyze the given student performance data and provide insights, recommendations, and areas for improvement. Include specific strategies for enhancing weak areas and leveraging strengths."},
+                {"role": "user", "content": f"Analyze the following student performance data:\n{performance_data}"}
+            ]
 
-            1. Main topics discussed
-            2. Key insights or conclusions reached
-            3. Any questions that remained unanswered or require further exploration
-            4. Suggestions for future collaboration sessions
-            5. Notable contributions from participants
-            6. Areas where the group showed strong collaboration
-            7. Potential action items or next steps for the group
-
-            Conversation:
-            {conversation}
-
-            Please provide a summary in a clear, organized format that will be valuable for the participants to review and act upon.
-            """
-            formatted_prompt = prompt.format(conversation="\n".join(messages))
-            summary = self.llm_orchestrator.process_request([
-                {"role": "system", "content": formatted_prompt}
-            ], "high")
+            analysis = await self.llm_orchestrator.process_request(context, "high")
             
-            if summary is None:
-                raise Exception("Failed to generate collaboration summary")
-            
-            return summary
+            # Generate a study plan based on the analysis
+            study_plan_context = [
+                {"role": "system", "content": "Based on the performance analysis, create a tailored study plan:"},
+                {"role": "user", "content": analysis}
+            ]
+            study_plan = await self.llm_orchestrator.process_request(study_plan_context, "medium")
+
+            return {
+                "user_id": user_id,
+                "performance_data": performance_data,
+                "analysis": analysis,
+                "study_plan": study_plan
+            }
         except Exception as e:
-            logger.error(f"Error in summarize_collaboration: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error in collaboration summary: {str(e)}")
+            logger.error(f"Error in analyze_student_performance: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred while analyzing student performance")
 
-def get_ai_tutor_service(llm_orchestrator: LLMOrchestrator = Depends(get_llm_orchestrator)) -> AITutorService:
-    return AITutorService(llm_orchestrator)
+    def _determine_response_quality(self, user_id: str) -> str:
+        current_time = time.time()
+        last_interaction = self.last_interaction_time.get(user_id, 0)
+        time_since_last_interaction = current_time - last_interaction
+
+        if time_since_last_interaction < 300:  # Less than 5 minutes
+            return "concise"
+        elif time_since_last_interaction < 3600:  # Less than 1 hour
+            return "detailed"
+        else:
+            return "comprehensive"
+
+ai_tutor_service = AITutorService(get_llm_orchestrator(), get_text_embedding_service())
+
+def get_ai_tutor_service() -> AITutorService:
+    return ai_tutor_service
