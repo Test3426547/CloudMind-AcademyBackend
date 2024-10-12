@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, List
 import time
 from functools import lru_cache
 import asyncio
+import numpy as np
+from sklearn.preprocessing import StandardScaler
 
 class LLMOrchestrator:
     def __init__(self):
@@ -13,7 +15,7 @@ class LLMOrchestrator:
             base_url="https://openrouter.ai/api/v1",
             api_key=self.api_key,
             default_headers={
-                "HTTP-Referer": "https://cloudmindacademy.com"  # Replace with your actual domain
+                "HTTP-Referer": "https://cloudmindacademy.com"
             }
         )
         logging.basicConfig(level=logging.INFO)
@@ -21,18 +23,26 @@ class LLMOrchestrator:
         self.model_performance = {}
         self.max_retries = 3
         self.retry_delay = 1  # seconds
+        self.scaler = StandardScaler()
+        self.model_usage = {
+            "anthropic/claude-3-opus": 0,
+            "anthropic/claude-3-sonnet": 0,
+            "anthropic/claude-3-haiku": 0
+        }
 
     @lru_cache(maxsize=100)
-    def choose_model(self, task_complexity: str) -> str:
-        if task_complexity == "high":
+    def choose_model(self, task_complexity: str, input_length: int) -> str:
+        if task_complexity == "high" or input_length > 1000:
             return "anthropic/claude-3-opus"
-        elif task_complexity == "medium":
+        elif task_complexity == "medium" or input_length > 500:
             return "anthropic/claude-3-sonnet"
         else:
             return "anthropic/claude-3-haiku"
 
     async def process_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
-        model = self.choose_model(task_complexity)
+        input_length = sum(len(msg['content']) for msg in messages)
+        model = self.choose_model(task_complexity, input_length)
+        
         for attempt in range(self.max_retries):
             try:
                 self.logger.info(f"Processing request with model: {model}")
@@ -49,6 +59,7 @@ class LLMOrchestrator:
                         yield chunk.choices[0].delta.content
                 end_time = time.time()
                 self._update_model_performance(model, end_time - start_time)
+                self.model_usage[model] += 1
                 return full_response
             except Exception as e:
                 self.logger.error(f"Error processing request (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
@@ -67,6 +78,7 @@ class LLMOrchestrator:
                 model=fallback_model,
                 messages=messages
             )
+            self.model_usage[fallback_model] += 1
             return response.choices[0].message.content
         except Exception as e:
             self.logger.error(f"Error in fallback request: {str(e)}")
@@ -74,18 +86,55 @@ class LLMOrchestrator:
 
     def _update_model_performance(self, model: str, response_time: float):
         if model not in self.model_performance:
-            self.model_performance[model] = {"total_time": 0, "requests": 0}
+            self.model_performance[model] = {"total_time": 0, "requests": 0, "response_times": []}
         self.model_performance[model]["total_time"] += response_time
         self.model_performance[model]["requests"] += 1
+        self.model_performance[model]["response_times"].append(response_time)
 
     def get_model_performance(self) -> Dict[str, Dict[str, float]]:
-        return {
-            model: {
-                "avg_response_time": data["total_time"] / data["requests"],
-                "total_requests": data["requests"]
+        performance = {}
+        for model, data in self.model_performance.items():
+            avg_response_time = data["total_time"] / data["requests"] if data["requests"] > 0 else 0
+            response_times = np.array(data["response_times"])
+            performance[model] = {
+                "avg_response_time": avg_response_time,
+                "total_requests": data["requests"],
+                "std_dev_response_time": np.std(response_times) if len(response_times) > 1 else 0,
+                "min_response_time": np.min(response_times) if len(response_times) > 0 else 0,
+                "max_response_time": np.max(response_times) if len(response_times) > 0 else 0,
             }
-            for model, data in self.model_performance.items()
-        }
+        return performance
+
+    def get_model_usage(self) -> Dict[str, int]:
+        return self.model_usage
+
+    async def adaptive_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
+        input_length = sum(len(msg['content']) for msg in messages)
+        initial_model = self.choose_model(task_complexity, input_length)
+        
+        try:
+            response = await self.process_request(messages, task_complexity)
+            if response:
+                return response
+            
+            # If the initial model fails, try the next more powerful model
+            models = ["anthropic/claude-3-haiku", "anthropic/claude-3-sonnet", "anthropic/claude-3-opus"]
+            current_model_index = models.index(initial_model)
+            
+            for model in models[current_model_index + 1:]:
+                self.logger.info(f"Attempting with more powerful model: {model}")
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages
+                )
+                self.model_usage[model] += 1
+                return response.choices[0].message.content
+            
+            self.logger.error("All models failed to process the request")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error in adaptive_request: {str(e)}")
+            return None
 
 llm_orchestrator = LLMOrchestrator()
 
