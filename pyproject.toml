@@ -16,6 +16,7 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi-amis-admin>=0.7.2",
     "fastapi-code-generator>=0.5.1",
+    "fastapi-limiter",
     "fastapi-mail>=1.4.1",
     "fastapi>=0.115.0",
     "fuzzywuzzy>=0.18.0",
