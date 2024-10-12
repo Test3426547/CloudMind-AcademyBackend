@@ -22,11 +22,11 @@ async def sync_offline_data(
     try:
         # Update user progress
         for course_id, progress in sync_data.user_progress.items():
-            offline_service.update_user_progress(user.id, course_id, progress)
+            await offline_service.update_user_progress(user.id, course_id, progress)
 
         # Save quiz responses
         for quiz_id, responses in sync_data.quiz_responses.items():
-            offline_service.save_quiz_response(user.id, quiz_id, responses)
+            await offline_service.save_quiz_response(user.id, quiz_id, responses)
 
         # Get the sync queue to send to the server
         sync_queue = offline_service.get_sync_queue()
@@ -34,7 +34,7 @@ async def sync_offline_data(
         # In a real-world scenario, you would send this data to the server
         # and receive updated data from the server to merge
         # For this example, we'll just clear the sync queue
-        offline_service.clear_sync_queue()
+        await offline_service.clear_sync_queue()
 
         return {"message": "Sync successful", "synced_items": len(sync_queue)}
     except Exception as e:
@@ -68,3 +68,39 @@ async def get_offline_quiz_responses(
 ):
     responses = offline_service.get_quiz_responses(user.id, quiz_id)
     return {"quiz_id": quiz_id, "responses": responses}
+
+@router.post("/offline/prioritize-content")
+async def prioritize_content(
+    user: User = Depends(oauth2_scheme),
+    offline_service: OfflineLearningService = Depends(get_offline_learning_service)
+):
+    try:
+        await offline_service._prioritize_content()
+        return {"message": "Content prioritized successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/offline/predict-progress/{course_id}")
+async def predict_user_progress(
+    course_id: str,
+    user: User = Depends(oauth2_scheme),
+    offline_service: OfflineLearningService = Depends(get_offline_learning_service)
+):
+    try:
+        predicted_progress = await offline_service.predict_progress(user.id, course_id)
+        return {"course_id": course_id, "predicted_progress": predicted_progress}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/offline/analyze-quiz/{quiz_id}")
+async def analyze_quiz_responses(
+    quiz_id: str,
+    user: User = Depends(oauth2_scheme),
+    offline_service: OfflineLearningService = Depends(get_offline_learning_service)
+):
+    try:
+        responses = offline_service.get_quiz_responses(user.id, quiz_id)
+        await offline_service._analyze_quiz_responses(user.id, quiz_id, responses)
+        return {"message": "Quiz responses analyzed successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
