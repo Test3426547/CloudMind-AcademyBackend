@@ -13,72 +13,46 @@ logger = logging.getLogger(__name__)
 class UserInterests(BaseModel):
     interests: List[str] = Field(..., min_items=1)
 
-@router.get("/percipio/courses")
-async def get_percipio_courses(
-    offset: int = 0,
-    limit: int = 10,
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
-):
-    try:
-        courses = await percipio_service.get_courses(offset, limit)
-        logger.info(f"Retrieved {len(courses)} Percipio courses for user {user.id}")
-        return courses
-    except Exception as e:
-        logger.error(f"Error retrieving Percipio courses: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while retrieving Percipio courses")
+# ... (keep existing endpoints)
 
-@router.get("/percipio/user-progress")
-async def get_user_progress(
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
-):
-    try:
-        progress = await percipio_service.get_user_progress(user.id)
-        logger.info(f"Retrieved Percipio progress for user {user.id}")
-        return progress
-    except Exception as e:
-        logger.error(f"Error retrieving user progress: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while retrieving user progress")
-
-@router.post("/percipio/recommend-content")
-async def recommend_content(
-    user_interests: UserInterests,
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
-):
-    try:
-        recommendations = await percipio_service.recommend_content(user.id, user_interests.interests)
-        logger.info(f"Generated content recommendations for user {user.id}")
-        return recommendations
-    except Exception as e:
-        logger.error(f"Error recommending content: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while recommending content")
-
-@router.get("/percipio/adaptive-learning-path/{target_course_id}")
-async def generate_adaptive_learning_path(
-    target_course_id: str,
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
-):
-    try:
-        learning_path = await percipio_service.generate_adaptive_learning_path(user.id, target_course_id)
-        logger.info(f"Generated adaptive learning path for user {user.id} and target course {target_course_id}")
-        return learning_path
-    except Exception as e:
-        logger.error(f"Error generating adaptive learning path: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while generating the adaptive learning path")
-
-@router.get("/percipio/estimate-difficulty/{content_id}")
-async def estimate_content_difficulty(
+@router.get("/percipio/analyze-sentiment/{content_id}")
+async def analyze_content_sentiment(
     content_id: str,
     user: User = Depends(oauth2_scheme),
     percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
 ):
     try:
-        difficulty_estimation = await percipio_service.estimate_content_difficulty(content_id)
-        logger.info(f"Estimated difficulty for content {content_id}")
-        return difficulty_estimation
+        sentiment_analysis = await percipio_service.analyze_content_sentiment(content_id)
+        logger.info(f"Analyzed sentiment for content {content_id}")
+        return sentiment_analysis
     except Exception as e:
-        logger.error(f"Error estimating content difficulty: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while estimating content difficulty")
+        logger.error(f"Error analyzing content sentiment: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while analyzing content sentiment")
+
+@router.get("/percipio/generate-summary/{content_id}")
+async def generate_content_summary(
+    content_id: str,
+    user: User = Depends(oauth2_scheme),
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
+):
+    try:
+        content_summary = await percipio_service.generate_content_summary(content_id)
+        logger.info(f"Generated summary for content {content_id}")
+        return content_summary
+    except Exception as e:
+        logger.error(f"Error generating content summary: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while generating content summary")
+
+@router.get("/percipio/predict-performance/{course_id}")
+async def predict_user_performance(
+    course_id: str,
+    user: User = Depends(oauth2_scheme),
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
+):
+    try:
+        performance_prediction = await percipio_service.predict_user_performance(user.id, course_id)
+        logger.info(f"Predicted performance for user {user.id} in course {course_id}")
+        return performance_prediction
+    except Exception as e:
+        logger.error(f"Error predicting user performance: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while predicting user performance")
