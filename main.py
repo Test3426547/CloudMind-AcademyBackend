@@ -23,7 +23,8 @@ from routers import (
     grading,
     lms_integration,
     supabase,
-    text_embedding
+    text_embedding,
+    voice_recognition
 )
 
 app = FastAPI()
@@ -59,6 +60,7 @@ app.include_router(grading.router)
 app.include_router(lms_integration.router)
 app.include_router(supabase.router)
 app.include_router(text_embedding.router)
+app.include_router(voice_recognition.router)
 
 if __name__ == "__main__":
     import uvicorn
