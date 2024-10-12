@@ -1,86 +1,93 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
-from typing import List, Optional
+from models.user import User
 from services.ar_vr_service import ARVRService, get_ar_vr_service
+from typing import List, Dict, Any
+from pydantic import BaseModel, Field
+import logging
 
 router = APIRouter()
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+logger = logging.getLogger(__name__)
 
-class ARVRContent(BaseModel):
-    id: Optional[str] = None
-    title: str
-    description: str
-    content_type: str  # e.g., "3D_model", "360_video", "VR_scene"
-    file_url: str
-    interaction_type: str  # e.g., "view_only", "interactive", "educational"
-    duration: Optional[int] = None  # Duration in seconds, if applicable
-    complexity_level: str  # e.g., "beginner", "intermediate", "advanced"
+class ImageData(BaseModel):
+    image_data: str = Field(..., min_length=1)
 
-class ARVRContentCreate(BaseModel):
-    title: str
-    description: str
-    content_type: str
-    file_url: str
-    interaction_type: str
-    duration: Optional[int] = None
-    complexity_level: str
+class RoomData(BaseModel):
+    room_id: str = Field(..., min_length=1)
+    dimensions: Dict[str, float]
 
-class ARVRSession(BaseModel):
-    session_id: str
-    content_id: str
-    user_id: str
-    start_time: str
-    end_time: Optional[str] = None
-    progress: float  # Progress percentage
+class GestureData(BaseModel):
+    gesture_points: List[Dict[str, float]]
 
-@router.post("/ar-vr/content", response_model=ARVRContent)
-async def create_ar_vr_content(content: ARVRContentCreate, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    return await ar_vr_service.create_content(content)
+class SceneData(BaseModel):
+    scene_id: str = Field(..., min_length=1)
+    objects: List[Dict[str, Any]]
 
-@router.get("/ar-vr/content/{content_id}", response_model=ARVRContent)
-async def get_ar_vr_content(content_id: str, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    content = await ar_vr_service.get_content(content_id)
-    if content is None:
-        raise HTTPException(status_code=404, detail="AR/VR content not found")
-    return content
+@router.post("/ar/recognize-objects")
+async def recognize_objects(
+    image_data: ImageData,
+    user: User = Depends(oauth2_scheme),
+    ar_vr_service: ARVRService = Depends(get_ar_vr_service),
+):
+    try:
+        result = await ar_vr_service.recognize_objects(image_data.image_data)
+        logger.info(f"Object recognition completed for user {user.id}")
+        return {"recognized_objects": result}
+    except HTTPException as e:
+        logger.error(f"HTTP error in recognize_objects: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in recognize_objects: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during object recognition")
 
-@router.get("/ar-vr/content", response_model=List[ARVRContent])
-async def list_ar_vr_content(token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    return await ar_vr_service.list_content()
+@router.post("/vr/generate-spatial-map")
+async def generate_spatial_map(
+    room_data: RoomData,
+    user: User = Depends(oauth2_scheme),
+    ar_vr_service: ARVRService = Depends(get_ar_vr_service),
+):
+    try:
+        result = await ar_vr_service.generate_spatial_map(room_data.dict())
+        logger.info(f"Spatial map generated for user {user.id}")
+        return {"spatial_map": result}
+    except HTTPException as e:
+        logger.error(f"HTTP error in generate_spatial_map: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in generate_spatial_map: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during spatial map generation")
 
-@router.put("/ar-vr/content/{content_id}", response_model=ARVRContent)
-async def update_ar_vr_content(content_id: str, content: ARVRContentCreate, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    updated_content = await ar_vr_service.update_content(content_id, content)
-    if updated_content is None:
-        raise HTTPException(status_code=404, detail="AR/VR content not found")
-    return updated_content
+@router.post("/ar/recognize-gesture")
+async def recognize_gesture(
+    gesture_data: GestureData,
+    user: User = Depends(oauth2_scheme),
+    ar_vr_service: ARVRService = Depends(get_ar_vr_service),
+):
+    try:
+        result = await ar_vr_service.recognize_gesture(gesture_data.dict())
+        logger.info(f"Gesture recognition completed for user {user.id}")
+        return {"recognized_gesture": result}
+    except HTTPException as e:
+        logger.error(f"HTTP error in recognize_gesture: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in recognize_gesture: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during gesture recognition")
 
-@router.delete("/ar-vr/content/{content_id}", response_model=bool)
-async def delete_ar_vr_content(content_id: str, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    success = await ar_vr_service.delete_content(content_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="AR/VR content not found")
-    return True
-
-@router.post("/ar-vr/session", response_model=ARVRSession)
-async def start_ar_vr_session(content_id: str, user_id: str, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    session = await ar_vr_service.start_session(content_id, user_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Failed to start AR/VR session")
-    return session
-
-@router.put("/ar-vr/session/{session_id}", response_model=ARVRSession)
-async def update_ar_vr_session(session_id: str, progress: float, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    updated_session = await ar_vr_service.update_session(session_id, progress)
-    if updated_session is None:
-        raise HTTPException(status_code=404, detail="AR/VR session not found")
-    return updated_session
-
-@router.get("/ar-vr/session/{session_id}", response_model=ARVRSession)
-async def get_ar_vr_session(session_id: str, token: str = Depends(oauth2_scheme), ar_vr_service: ARVRService = Depends(get_ar_vr_service)):
-    session = await ar_vr_service.get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="AR/VR session not found")
-    return session
+@router.post("/ar/generate-overlay")
+async def generate_ar_overlay(
+    scene_data: SceneData,
+    user: User = Depends(oauth2_scheme),
+    ar_vr_service: ARVRService = Depends(get_ar_vr_service),
+):
+    try:
+        result = await ar_vr_service.generate_ar_overlay(scene_data.dict())
+        logger.info(f"AR overlay generated for user {user.id}")
+        return {"ar_overlay": result}
+    except HTTPException as e:
+        logger.error(f"HTTP error in generate_ar_overlay: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in generate_ar_overlay: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during AR overlay generation")
