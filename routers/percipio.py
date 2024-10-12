@@ -1,106 +1,84 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from services.percipio_service import PercipioService, get_percipio_service
-from typing import List, Dict, Any, Optional
 from models.user import User
+from services.percipio_integration_service import PercipioIntegrationService, get_percipio_integration_service
+from typing import List, Dict, Any
+from pydantic import BaseModel, Field
 import logging
-from fastapi_limiter.depends import RateLimiter
 
 router = APIRouter()
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class UserInterests(BaseModel):
+    interests: List[str] = Field(..., min_items=1)
 
 @router.get("/percipio/courses")
 async def get_percipio_courses(
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = 0,
+    limit: int = 10,
     user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=10, seconds=60))
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
 ):
     try:
-        courses = await percipio_service.get_courses(limit, offset)
-        logger.info(f"Successfully fetched {len(courses)} Percipio courses for user {user.id}")
-        return {"courses": courses}
+        courses = await percipio_service.get_courses(offset, limit)
+        logger.info(f"Retrieved {len(courses)} Percipio courses for user {user.id}")
+        return courses
     except Exception as e:
-        logger.error(f"Error fetching Percipio courses for user {user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching Percipio courses. Please try again later.")
+        logger.error(f"Error retrieving Percipio courses: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while retrieving Percipio courses")
 
-@router.get("/percipio/courses/{course_id}")
-async def get_percipio_course_details(
-    course_id: str,
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=20, seconds=60))
-):
-    try:
-        course_details = await percipio_service.get_course_details(course_id)
-        logger.info(f"Successfully fetched details for Percipio course {course_id} for user {user.id}")
-        return course_details
-    except Exception as e:
-        logger.error(f"Error fetching Percipio course details for course {course_id} and user {user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching course details. Please try again later.")
-
-@router.post("/percipio/courses/{course_id}/start")
-async def start_percipio_course(
-    course_id: str,
-    user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=5, seconds=60))
-):
-    try:
-        result = await percipio_service.start_course(user.id, course_id)
-        logger.info(f"Successfully started Percipio course {course_id} for user {user.id}")
-        return {"message": "Course started successfully", "result": result}
-    except Exception as e:
-        logger.error(f"Error starting Percipio course {course_id} for user {user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while starting the course. Please try again later.")
-
-@router.get("/percipio/user/progress")
+@router.get("/percipio/user-progress")
 async def get_user_progress(
     user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=10, seconds=60))
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
 ):
     try:
         progress = await percipio_service.get_user_progress(user.id)
-        logger.info(f"Successfully fetched progress for user {user.id}")
-        return {"user_id": user.id, "progress": progress}
+        logger.info(f"Retrieved Percipio progress for user {user.id}")
+        return progress
     except Exception as e:
-        logger.error(f"Error fetching user progress for user {user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching user progress. Please try again later.")
+        logger.error(f"Error retrieving user progress: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while retrieving user progress")
 
-@router.get("/percipio/search")
-async def search_percipio_content(
-    query: str,
-    content_type: Optional[str] = None,
-    limit: int = Query(10, ge=1, le=100),
+@router.post("/percipio/recommend-content")
+async def recommend_content(
+    user_interests: UserInterests,
     user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=15, seconds=60))
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
 ):
     try:
-        results = await percipio_service.search_content(query, content_type, limit)
-        logger.info(f"Successfully searched Percipio content for user {user.id} with query: {query}")
-        return {"results": results}
+        recommendations = await percipio_service.recommend_content(user.id, user_interests.interests)
+        logger.info(f"Generated content recommendations for user {user.id}")
+        return recommendations
     except Exception as e:
-        logger.error(f"Error searching Percipio content for user {user.id} with query {query}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while searching content. Please try again later.")
+        logger.error(f"Error recommending content: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while recommending content")
 
-@router.get("/percipio/recommendations")
-async def get_percipio_recommendations(
+@router.get("/percipio/adaptive-learning-path/{target_course_id}")
+async def generate_adaptive_learning_path(
+    target_course_id: str,
     user: User = Depends(oauth2_scheme),
-    percipio_service: PercipioService = Depends(get_percipio_service),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=5, seconds=60))
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
 ):
     try:
-        recommendations = await percipio_service.get_recommendations(user.id)
-        logger.info(f"Successfully fetched Percipio recommendations for user {user.id}")
-        return {"user_id": user.id, "recommendations": recommendations}
+        learning_path = await percipio_service.generate_adaptive_learning_path(user.id, target_course_id)
+        logger.info(f"Generated adaptive learning path for user {user.id} and target course {target_course_id}")
+        return learning_path
     except Exception as e:
-        logger.error(f"Error fetching Percipio recommendations for user {user.id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching recommendations. Please try again later.")
+        logger.error(f"Error generating adaptive learning path: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while generating the adaptive learning path")
+
+@router.get("/percipio/estimate-difficulty/{content_id}")
+async def estimate_content_difficulty(
+    content_id: str,
+    user: User = Depends(oauth2_scheme),
+    percipio_service: PercipioIntegrationService = Depends(get_percipio_integration_service),
+):
+    try:
+        difficulty_estimation = await percipio_service.estimate_content_difficulty(content_id)
+        logger.info(f"Estimated difficulty for content {content_id}")
+        return difficulty_estimation
+    except Exception as e:
+        logger.error(f"Error estimating content difficulty: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while estimating content difficulty")
