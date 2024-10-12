@@ -23,6 +23,7 @@ dependencies = [
     "imagebind",
     "langchain>=0.0.27",
     "librosa",
+    "logging",
     "nltk",
     "numpy==1.23.5",
     "openai>=1.51.2",
