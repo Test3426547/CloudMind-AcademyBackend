@@ -1,124 +1,105 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from models.user import User
-from typing import List, Dict
+from services.video_content_service import VideoContentService, get_video_content_service
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
-from fastapi_limiter.depends import RateLimiter
 import logging
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 logger = logging.getLogger(__name__)
 
-class VideoMetadata(BaseModel):
-    id: str = Field(..., min_length=1, max_length=50)
+class VideoUpload(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(..., min_length=1, max_length=1000)
-    duration: int = Field(..., gt=0)  # in seconds
-    thumbnail_url: str = Field(..., min_length=1, max_length=500)
+    url: str = Field(..., min_length=1)
 
-class VideoProgress(BaseModel):
-    video_id: str = Field(..., min_length=1, max_length=50)
-    progress: float = Field(..., ge=0, le=1)  # 0 to 1
+class VideoRecommendation(BaseModel):
+    video_id: str
+    similarity: float
 
-# Mock data for demonstration
-mock_videos = [
-    {
-        "id": "1",
-        "title": "Introduction to Python",
-        "description": "Learn the basics of Python programming",
-        "duration": 600,
-        "thumbnail_url": "https://example.com/thumbnail1.jpg",
-        "hls_url": "https://example.com/video1.m3u8"
-    },
-    {
-        "id": "2",
-        "title": "Advanced Python Concepts",
-        "description": "Dive deeper into Python with advanced topics",
-        "duration": 900,
-        "thumbnail_url": "https://example.com/thumbnail2.jpg",
-        "hls_url": "https://example.com/video2.m3u8"
-    }
-]
-
-@router.get("/videos", response_model=List[VideoMetadata])
-async def get_videos(
+@router.post("/videos/upload")
+async def upload_video(
+    video_data: VideoUpload,
     user: User = Depends(oauth2_scheme),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=10, seconds=60))
+    video_service: VideoContentService = Depends(get_video_content_service),
 ):
     try:
-        logger.info(f"User {user.id} requested video list")
-        return [VideoMetadata(**video) for video in mock_videos]
+        result = await video_service.upload_video(video_data.dict())
+        logger.info(f"Video uploaded successfully by user {user.id}")
+        return result
+    except HTTPException as e:
+        logger.warning(f"HTTP error in upload_video: {str(e)}")
+        raise e
     except Exception as e:
-        logger.error(f"Error fetching videos: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching videos")
+        logger.error(f"Unexpected error in upload_video: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while uploading the video")
 
-@router.get("/videos/{video_id}", response_model=VideoMetadata)
-async def get_video_metadata(
+@router.get("/videos/{video_id}")
+async def get_video(
     video_id: str,
     user: User = Depends(oauth2_scheme),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=20, seconds=60))
+    video_service: VideoContentService = Depends(get_video_content_service),
 ):
     try:
-        logger.info(f"User {user.id} requested metadata for video {video_id}")
-        video = next((v for v in mock_videos if v["id"] == video_id), None)
-        if not video:
-            logger.warning(f"Video {video_id} not found")
-            raise HTTPException(status_code=404, detail="Video not found")
-        return VideoMetadata(**video)
-    except HTTPException:
-        raise
+        video = await video_service.get_video(video_id)
+        logger.info(f"Video {video_id} retrieved for user {user.id}")
+        return video
+    except HTTPException as e:
+        logger.warning(f"HTTP error in get_video: {str(e)}")
+        raise e
     except Exception as e:
-        logger.error(f"Error fetching video metadata: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching video metadata")
+        logger.error(f"Unexpected error in get_video: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving the video")
 
-@router.get("/videos/{video_id}/stream")
-async def get_video_stream_url(
+@router.get("/videos/recommend", response_model=List[VideoRecommendation])
+async def recommend_videos(
+    num_recommendations: int = 5,
+    user: User = Depends(oauth2_scheme),
+    video_service: VideoContentService = Depends(get_video_content_service),
+):
+    try:
+        recommendations = await video_service.recommend_videos(user.id, num_recommendations)
+        logger.info(f"Video recommendations generated for user {user.id}")
+        return recommendations
+    except HTTPException as e:
+        logger.warning(f"HTTP error in recommend_videos: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in recommend_videos: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating video recommendations")
+
+@router.get("/videos/{video_id}/summary")
+async def get_video_summary(
     video_id: str,
     user: User = Depends(oauth2_scheme),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=30, seconds=60))
+    video_service: VideoContentService = Depends(get_video_content_service),
 ):
     try:
-        logger.info(f"User {user.id} requested stream URL for video {video_id}")
-        video = next((v for v in mock_videos if v["id"] == video_id), None)
-        if not video:
-            logger.warning(f"Video {video_id} not found")
-            raise HTTPException(status_code=404, detail="Video not found")
-        return {"hls_url": video["hls_url"]}
-    except HTTPException:
-        raise
+        summary = await video_service.generate_video_summary(video_id)
+        logger.info(f"Summary generated for video {video_id}")
+        return {"video_id": video_id, "summary": summary}
+    except HTTPException as e:
+        logger.warning(f"HTTP error in get_video_summary: {str(e)}")
+        raise e
     except Exception as e:
-        logger.error(f"Error fetching video stream URL: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching video stream URL")
+        logger.error(f"Unexpected error in get_video_summary: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the video summary")
 
-@router.post("/videos/{video_id}/progress")
-async def update_video_progress(
-    video_id: str,
-    progress: VideoProgress,
+@router.get("/videos/cluster")
+async def cluster_videos(
+    num_clusters: int = 5,
     user: User = Depends(oauth2_scheme),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=50, seconds=60))
+    video_service: VideoContentService = Depends(get_video_content_service),
 ):
     try:
-        logger.info(f"User {user.id} updated progress for video {video_id}: {progress.progress}")
-        # In a real implementation, you would update the user's progress in a database
-        return {"message": f"Progress updated for video {video_id}"}
+        clusters = await video_service.cluster_videos(num_clusters)
+        logger.info(f"Videos clustered into {num_clusters} groups")
+        return {"clusters": clusters}
+    except HTTPException as e:
+        logger.warning(f"HTTP error in cluster_videos: {str(e)}")
+        raise e
     except Exception as e:
-        logger.error(f"Error updating video progress: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while updating video progress")
-
-@router.get("/videos/{video_id}/related")
-async def get_related_videos(
-    video_id: str,
-    user: User = Depends(oauth2_scheme),
-    limit: int = Query(5, ge=1, le=20),
-    rate_limiter: RateLimiter = Depends(RateLimiter(times=10, seconds=60))
-):
-    try:
-        logger.info(f"User {user.id} requested related videos for video {video_id}")
-        # In a real implementation, you would use a recommendation system
-        # For now, we'll just return all other videos
-        related_videos = [v for v in mock_videos if v["id"] != video_id][:limit]
-        return [VideoMetadata(**video) for video in related_videos]
-    except Exception as e:
-        logger.error(f"Error fetching related videos: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching related videos")
+        logger.error(f"Unexpected error in cluster_videos: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while clustering videos")

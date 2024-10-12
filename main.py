@@ -23,7 +23,7 @@ from routers import (
     grading,
     lms_integration,
     supabase,
-    text_embedding  # Add this line to import the new text_embedding router
+    text_embedding
 )
 
 app = FastAPI()
@@ -58,7 +58,7 @@ app.include_router(emotion_analysis.router)
 app.include_router(grading.router)
 app.include_router(lms_integration.router)
 app.include_router(supabase.router)
-app.include_router(text_embedding.router)  # Add this line to include the new text_embedding router
+app.include_router(text_embedding.router)
 
 if __name__ == "__main__":
     import uvicorn
