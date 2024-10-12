@@ -21,7 +21,7 @@ from routers import (
     ar_vr,
     emotion_analysis,
     grading,
-    lms_integration  # Add this line
+    lms_integration
 )
 
 app = FastAPI()
@@ -54,7 +54,7 @@ app.include_router(translation.router)
 app.include_router(ar_vr.router)
 app.include_router(emotion_analysis.router)
 app.include_router(grading.router)
-app.include_router(lms_integration.router)  # Add this line
+app.include_router(lms_integration.router)
 
 if __name__ == "__main__":
     import uvicorn
