@@ -16,7 +16,8 @@ from routers import (
     data_visualization,
     openrouter,
     ai_model_training,
-    v0dev
+    v0dev,
+    translation  # Add this line
 )
 
 app = FastAPI()
@@ -45,6 +46,7 @@ app.include_router(data_visualization.router)
 app.include_router(openrouter.router)
 app.include_router(ai_model_training.router)
 app.include_router(v0dev.router)
+app.include_router(translation.router)  # Add this line
 
 if __name__ == "__main__":
     import uvicorn
