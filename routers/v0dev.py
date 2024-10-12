@@ -24,6 +24,11 @@ class UIGenerationRequest(BaseModel):
             raise ValueError("Prompt cannot be empty or just whitespace")
         return v
 
+class FeedbackRequest(BaseModel):
+    prompt: str = Field(..., min_length=10, max_length=1000)
+    component: str = Field(..., min_length=10)
+    rating: int = Field(..., ge=1, le=5)
+
 @router.post("/v0dev/generate-ui")
 @cached(cache)
 async def generate_ui_component(
@@ -46,6 +51,25 @@ async def generate_ui_component(
     except Exception as e:
         logger.error(f"Unexpected error in generate_ui_component: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the UI component")
+
+@router.post("/v0dev/feedback")
+async def provide_feedback(
+    request: FeedbackRequest,
+    user: User = Depends(oauth2_scheme),
+    v0dev_service: V0DevService = Depends(get_v0dev_service),
+    rate_limiter: RateLimiter = Depends(RateLimiter(times=10, seconds=60))
+):
+    try:
+        logger.info(f"Receiving feedback from user {user.id}")
+        result = await v0dev_service.provide_feedback(request.prompt, request.component, request.rating)
+        logger.info(f"Successfully recorded feedback from user {user.id}")
+        return result
+    except ValueError as e:
+        logger.warning(f"Invalid input for provide_feedback: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in provide_feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while processing feedback")
 
 @router.get("/v0dev/health")
 async def health_check(
