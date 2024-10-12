@@ -1,141 +1,232 @@
 import numpy as np
-import asyncio
-import time
-import random
-from typing import List, Dict, Any, Optional
-from fastapi import HTTPException
+import tensorflow as tf
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, accuracy_score
+from typing import List, Dict, Any
 import logging
-from pydantic import BaseModel, Field, validator
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class HuggingFaceTrainingRequest(BaseModel):
-    model_name: str = Field(..., min_length=1, max_length=100)
-    dataset_name: str = Field(..., min_length=1, max_length=100)
-    num_labels: int = Field(..., ge=2, le=100)
-    num_train_epochs: int = Field(3, ge=1, le=50)
-    learning_rate: float = Field(2e-5, ge=1e-6, le=1e-3)
-    batch_size: int = Field(8, ge=1, le=128)
-    weight_decay: float = Field(0.01, ge=0, le=0.1)
-    use_early_stopping: bool = Field(False)
-    early_stopping_patience: int = Field(3, ge=1, le=10)
-    use_data_augmentation: bool = Field(False)
-    augmentation_factor: int = Field(2, ge=1, le=5)
-    use_advanced_tokenization: bool = Field(False)
-    use_curriculum_learning: bool = Field(False)
+class MLFlows:
+    def __init__(self):
+        self.scaler = StandardScaler()
 
-    @validator('model_name', 'dataset_name')
-    def validate_string_fields(cls, v):
-        if not v.strip():
-            raise ValueError("Field cannot be empty or just whitespace")
-        return v
+    def linear_regression_numpy(self, X: np.ndarray, y: np.ndarray, epochs: int = 1000, lr: float = 0.01) -> Dict[str, Any]:
+        X = self.scaler.fit_transform(X)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        weights = np.zeros(X_train.shape[1])
+        bias = 0
+        
+        for _ in range(epochs):
+            y_pred = np.dot(X_train, weights) + bias
+            d_weights = (1 / len(y_train)) * np.dot(X_train.T, (y_pred - y_train))
+            d_bias = (1 / len(y_train)) * np.sum(y_pred - y_train)
+            weights -= lr * d_weights
+            bias -= lr * d_bias
+        
+        y_pred_test = np.dot(X_test, weights) + bias
+        mse = mean_squared_error(y_test, y_pred_test)
+        
+        return {"weights": weights, "bias": bias, "mse": mse}
+
+    def logistic_regression_pytorch(self, X: np.ndarray, y: np.ndarray, epochs: int = 1000, lr: float = 0.01) -> Dict[str, Any]:
+        X = self.scaler.fit_transform(X)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        X_train = torch.FloatTensor(X_train)
+        y_train = torch.FloatTensor(y_train)
+        X_test = torch.FloatTensor(X_test)
+        y_test = torch.FloatTensor(y_test)
+        
+        model = nn.Linear(X_train.shape[1], 1)
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.SGD(model.parameters(), lr=lr)
+        
+        for _ in range(epochs):
+            optimizer.zero_grad()
+            outputs = model(X_train)
+            loss = criterion(outputs, y_train.unsqueeze(1))
+            loss.backward()
+            optimizer.step()
+        
+        with torch.no_grad():
+            y_pred = (model(X_test) > 0.5).float()
+            accuracy = accuracy_score(y_test, y_pred)
+        
+        return {"model": model, "accuracy": accuracy}
+
+    def neural_network_tensorflow(self, X: np.ndarray, y: np.ndarray, epochs: int = 100, batch_size: int = 32) -> Dict[str, Any]:
+        X = self.scaler.fit_transform(X)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu', input_shape=(X_train.shape[1],)),
+            tf.keras.layers.Dense(32, activation='relu'),
+            tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+        
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2, verbose=0)
+        
+        test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+        
+        return {"model": model, "history": history.history, "test_accuracy": test_accuracy}
+
+    def convolutional_neural_network_pytorch(self, X: np.ndarray, y: np.ndarray, epochs: int = 50, batch_size: int = 64) -> Dict[str, Any]:
+        X = X.reshape(-1, 1, 28, 28)  # Assuming 28x28 images
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        X_train = torch.FloatTensor(X_train)
+        y_train = torch.LongTensor(y_train)
+        X_test = torch.FloatTensor(X_test)
+        y_test = torch.LongTensor(y_test)
+        
+        class CNN(nn.Module):
+            def __init__(self):
+                super(CNN, self).__init__()
+                self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+                self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+                self.fc1 = nn.Linear(64 * 7 * 7, 128)
+                self.fc2 = nn.Linear(128, 10)
+            
+            def forward(self, x):
+                x = torch.relu(self.conv1(x))
+                x = torch.max_pool2d(x, 2)
+                x = torch.relu(self.conv2(x))
+                x = torch.max_pool2d(x, 2)
+                x = x.view(-1, 64 * 7 * 7)
+                x = torch.relu(self.fc1(x))
+                x = self.fc2(x)
+                return x
+        
+        model = CNN()
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters())
+        
+        for epoch in range(epochs):
+            for i in range(0, len(X_train), batch_size):
+                batch_X = X_train[i:i+batch_size]
+                batch_y = y_train[i:i+batch_size]
+                
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+        
+        model.eval()
+        with torch.no_grad():
+            y_pred = model(X_test).argmax(dim=1)
+            accuracy = accuracy_score(y_test, y_pred)
+        
+        return {"model": model, "accuracy": accuracy}
+
+    def recurrent_neural_network_tensorflow(self, X: np.ndarray, y: np.ndarray, epochs: int = 50, batch_size: int = 32) -> Dict[str, Any]:
+        X = X.reshape(X.shape[0], X.shape[1], 1)  # Reshape for LSTM input
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = tf.keras.Sequential([
+            tf.keras.layers.LSTM(64, input_shape=(X_train.shape[1], 1), return_sequences=True),
+            tf.keras.layers.LSTM(32),
+            tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+        
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        
+        history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2, verbose=0)
+        
+        test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+        
+        return {"model": model, "history": history.history, "test_accuracy": test_accuracy}
+
+    def gradient_boosting_sklearn(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        from sklearn.ensemble import GradientBoostingClassifier
+        
+        X = self.scaler.fit_transform(X)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
+        model.fit(X_train, y_train)
+        
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        return {"model": model, "accuracy": accuracy}
+
+    def support_vector_machine_sklearn(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        from sklearn.svm import SVC
+        
+        X = self.scaler.fit_transform(X)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = SVC(kernel='rbf', C=1.0, random_state=42)
+        model.fit(X_train, y_train)
+        
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        return {"model": model, "accuracy": accuracy}
+
+    def k_means_clustering_sklearn(self, X: np.ndarray, n_clusters: int = 3) -> Dict[str, Any]:
+        from sklearn.cluster import KMeans
+        
+        X = self.scaler.fit_transform(X)
+        
+        model = KMeans(n_clusters=n_clusters, random_state=42)
+        cluster_labels = model.fit_predict(X)
+        
+        return {"model": model, "cluster_labels": cluster_labels}
+
+    def principal_component_analysis_sklearn(self, X: np.ndarray, n_components: int = 2) -> Dict[str, Any]:
+        from sklearn.decomposition import PCA
+        
+        X = self.scaler.fit_transform(X)
+        
+        pca = PCA(n_components=n_components)
+        X_pca = pca.fit_transform(X)
+        
+        return {"pca": pca, "transformed_data": X_pca, "explained_variance_ratio": pca.explained_variance_ratio_}
 
 class AIModelTrainingService:
     def __init__(self):
-        self.training_progress = {}
+        self.ml_flows = MLFlows()
 
-    async def train_with_huggingface(self, request: HuggingFaceTrainingRequest) -> Dict[str, Any]:
+    async def train_model(self, model_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            training_id = f"training_{int(time.time())}"
-            self.training_progress[training_id] = {"status": "initializing", "progress": 0}
+            X = np.array(data['features'])
+            y = np.array(data['labels'])
 
-            # Simulate model and tokenizer loading
-            await asyncio.sleep(2)
-            
-            # Simulate dataset loading and processing
-            dataset = await self._load_dataset_with_retry(request.dataset_name)
-            tokenized_datasets = await self._tokenize_dataset(dataset, request.use_advanced_tokenization)
-            
-            if request.use_data_augmentation:
-                tokenized_datasets = await self._augment_data(tokenized_datasets, request.augmentation_factor)
+            if model_type == "linear_regression":
+                result = self.ml_flows.linear_regression_numpy(X, y)
+            elif model_type == "logistic_regression":
+                result = self.ml_flows.logistic_regression_pytorch(X, y)
+            elif model_type == "neural_network":
+                result = self.ml_flows.neural_network_tensorflow(X, y)
+            elif model_type == "cnn":
+                result = self.ml_flows.convolutional_neural_network_pytorch(X, y)
+            elif model_type == "rnn":
+                result = self.ml_flows.recurrent_neural_network_tensorflow(X, y)
+            elif model_type == "gradient_boosting":
+                result = self.ml_flows.gradient_boosting_sklearn(X, y)
+            elif model_type == "svm":
+                result = self.ml_flows.support_vector_machine_sklearn(X, y)
+            elif model_type == "kmeans":
+                result = self.ml_flows.k_means_clustering_sklearn(X)
+            elif model_type == "pca":
+                result = self.ml_flows.principal_component_analysis_sklearn(X)
+            else:
+                raise ValueError(f"Unsupported model type: {model_type}")
 
-            train_dataset, eval_dataset = self._split_dataset(tokenized_datasets)
-
-            # Simulate training process
-            self.training_progress[training_id]["status"] = "training"
-            total_steps = request.num_train_epochs * len(train_dataset) // request.batch_size
-            
-            for step in range(total_steps):
-                if request.use_early_stopping and self._should_stop_early():
-                    logger.info(f"Early stopping triggered for training {training_id}")
-                    break
-                
-                if request.use_curriculum_learning:
-                    self._apply_curriculum_learning(step, total_steps)
-                
-                await asyncio.sleep(0.1)  # Simulate training step
-                self.training_progress[training_id]["progress"] = (step + 1) / total_steps
-
-            # Simulate evaluation
-            self.training_progress[training_id]["status"] = "evaluating"
-            await asyncio.sleep(3)
-
-            eval_results = self._simulate_evaluation()
-
-            self.training_progress[training_id]["status"] = "completed"
-            return {
-                "training_id": training_id,
-                "message": "Model trained successfully with simulated Hugging Face pipeline",
-                "eval_results": eval_results
-            }
+            return {"status": "success", "model_type": model_type, "result": result}
         except Exception as e:
-            self.training_progress[training_id]["status"] = "failed"
-            logger.error(f"Error during simulated Hugging Face training: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error during simulated Hugging Face training: {str(e)}")
-
-    async def _load_dataset_with_retry(self, dataset_name: str, max_retries: int = 3) -> Dict[str, Any]:
-        for attempt in range(max_retries):
-            try:
-                await asyncio.sleep(1)  # Simulate dataset loading
-                return {"train": list(range(10000)), "test": list(range(1000))}
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise e
-                await asyncio.sleep(2 ** attempt)
-
-    async def _tokenize_dataset(self, dataset: Dict[str, Any], use_advanced_tokenization: bool) -> Dict[str, Any]:
-        await asyncio.sleep(2)  # Simulate tokenization process
-        if use_advanced_tokenization:
-            logger.info("Using advanced tokenization techniques")
-            await asyncio.sleep(1)  # Additional time for advanced tokenization
-        return dataset
-
-    async def _augment_data(self, dataset: Dict[str, Any], augmentation_factor: int) -> Dict[str, Any]:
-        await asyncio.sleep(2)  # Simulate data augmentation
-        augmented_dataset = {
-            "train": dataset["train"] * augmentation_factor,
-            "test": dataset["test"]
-        }
-        return augmented_dataset
-
-    def _split_dataset(self, dataset: Dict[str, Any]) -> tuple:
-        return dataset["train"], dataset["test"]
-
-    def _should_stop_early(self) -> bool:
-        return random.random() < 0.05  # 5% chance of early stopping
-
-    def _apply_curriculum_learning(self, current_step: int, total_steps: int):
-        progress = current_step / total_steps
-        if progress < 0.3:
-            logger.info("Curriculum Learning: Focusing on easier samples")
-        elif progress < 0.7:
-            logger.info("Curriculum Learning: Introducing moderate difficulty samples")
-        else:
-            logger.info("Curriculum Learning: Training on all sample difficulties")
-
-    def _simulate_evaluation(self) -> Dict[str, float]:
-        return {
-            "accuracy": random.uniform(0.7, 0.95),
-            "f1_score": random.uniform(0.7, 0.95),
-            "precision": random.uniform(0.7, 0.95),
-            "recall": random.uniform(0.7, 0.95)
-        }
-
-    async def get_training_progress(self, training_id: str) -> Dict[str, Any]:
-        if training_id not in self.training_progress:
-            raise HTTPException(status_code=404, detail="Training job not found")
-        return self.training_progress[training_id]
+            logger.error(f"Error in train_model: {str(e)}")
+            return {"status": "error", "message": str(e)}
 
 ai_model_training_service = AIModelTrainingService()
 
