@@ -15,11 +15,11 @@ class NotificationCreate(BaseModel):
     content: str = Field(..., min_length=1)
 
 class NotificationUpdate(BaseModel):
-    status: str = Field(..., regex="^(read|unread|dismissed)$")
+    status: str = Field(..., pattern="^(read|unread|dismissed)$")
 
 class UserPreferences(BaseModel):
     preferred_notification_times: List[str] = Field(..., min_items=1)
-    notification_frequency: str = Field(..., regex="^(low|medium|high)$")
+    notification_frequency: str = Field(..., pattern="^(low|medium|high)$")
     preferred_channels: List[str] = Field(..., min_items=1)
 
 class NotificationResponse(BaseModel):

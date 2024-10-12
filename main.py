@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from auth_config import get_supabase_client
 from supabase import Client
+from auth_config import get_supabase_client
 from routers import (
     notification,
     analytics,
@@ -21,7 +21,8 @@ from routers import (
     ar_vr,
     emotion_analysis,
     grading,
-    lms_integration
+    lms_integration,
+    supabase  # Add this line to import the new Supabase router
 )
 
 app = FastAPI()
@@ -55,6 +56,7 @@ app.include_router(ar_vr.router)
 app.include_router(emotion_analysis.router)
 app.include_router(grading.router)
 app.include_router(lms_integration.router)
+app.include_router(supabase.router)  # Add this line to include the new Supabase router
 
 if __name__ == "__main__":
     import uvicorn

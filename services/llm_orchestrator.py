@@ -60,29 +60,33 @@ class LLMOrchestrator:
                 end_time = time.time()
                 self._update_model_performance(model, end_time - start_time)
                 self.model_usage[model] += 1
-                return full_response
+                return
             except Exception as e:
                 self.logger.error(f"Error processing request (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (2 ** attempt))  # Exponential backoff
                 else:
                     self.logger.error(f"Max retries reached. Falling back to simpler model.")
-                    return await self._fallback_request(messages)
-        return None
+                    async for chunk in self._fallback_request(messages):
+                        yield chunk
+        return
 
-    async def _fallback_request(self, messages: List[Dict[str, str]]) -> Optional[str]:
+    async def _fallback_request(self, messages: List[Dict[str, str]]):
         try:
             fallback_model = "anthropic/claude-3-haiku"
             self.logger.info(f"Using fallback model: {fallback_model}")
             response = await self.client.chat.completions.create(
                 model=fallback_model,
-                messages=messages
+                messages=messages,
+                stream=True
             )
             self.model_usage[fallback_model] += 1
-            return response.choices[0].message.content
+            async for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
         except Exception as e:
             self.logger.error(f"Error in fallback request: {str(e)}")
-            return None
+            yield None
 
     def _update_model_performance(self, model: str, response_time: float):
         if model not in self.model_performance:
@@ -108,14 +112,14 @@ class LLMOrchestrator:
     def get_model_usage(self) -> Dict[str, int]:
         return self.model_usage
 
-    async def adaptive_request(self, messages: List[Dict[str, str]], task_complexity: str) -> Optional[str]:
+    async def adaptive_request(self, messages: List[Dict[str, str]], task_complexity: str):
         input_length = sum(len(msg['content']) for msg in messages)
         initial_model = self.choose_model(task_complexity, input_length)
         
         try:
-            response = await self.process_request(messages, task_complexity)
-            if response:
-                return response
+            async for chunk in self.process_request(messages, task_complexity):
+                if chunk:
+                    yield chunk
             
             # If the initial model fails, try the next more powerful model
             models = ["anthropic/claude-3-haiku", "anthropic/claude-3-sonnet", "anthropic/claude-3-opus"]
@@ -125,16 +129,18 @@ class LLMOrchestrator:
                 self.logger.info(f"Attempting with more powerful model: {model}")
                 response = await self.client.chat.completions.create(
                     model=model,
-                    messages=messages
+                    messages=messages,
+                    stream=True
                 )
                 self.model_usage[model] += 1
-                return response.choices[0].message.content
+                async for chunk in response:
+                    if chunk.choices[0].delta.content is not None:
+                        yield chunk.choices[0].delta.content
             
             self.logger.error("All models failed to process the request")
-            return None
         except Exception as e:
             self.logger.error(f"Error in adaptive_request: {str(e)}")
-            return None
+            yield None
 
 llm_orchestrator = LLMOrchestrator()
 
