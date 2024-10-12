@@ -40,6 +40,7 @@ dependencies = [
     "python-levenshtein>=0.26.0",
     "python-multipart>=0.0.12",
     "ratelimit",
+    "redis",
     "requests>=2.32.3",
     "scikit-learn>=1.5.2",
     "seaborn",
