@@ -1,5 +1,10 @@
 {pkgs}: {
   deps = [
+    pkgs.qhull
+    pkgs.gtk3
+    pkgs.gobject-introspection
+    pkgs.ghostscript
+    pkgs.cairo
     pkgs.which
     pkgs.libpng
     pkgs.libjpeg_turbo
