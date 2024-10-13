@@ -1,136 +1,176 @@
 import asyncio
 from typing import List, Dict, Any, Optional
-from services.text_embedding_service import TextEmbeddingService, get_text_embedding_service
-from functools import lru_cache
-from fuzzywuzzy import fuzz
-import json
-import time
-import logging
 from fastapi import HTTPException
+import logging
+from services.text_embedding_service import TextEmbeddingService, get_text_embedding_service
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
+from cachetools import TTLCache
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 class AdvancedSearchService:
-    def __init__(self, text_embedding_service: TextEmbeddingService):
+    def __init__(self, text_embedding_service: TextEmbeddingService, llm_orchestrator: LLMOrchestrator):
         self.text_embedding_service = text_embedding_service
-        self.search_cache = {}
-        self.cache_ttl = 3600  # 1 hour
+        self.llm_orchestrator = llm_orchestrator
+        self.cache = TTLCache(maxsize=1000, ttl=3600)  # Cache for 1 hour
+        self.tfidf_vectorizer = TfidfVectorizer()
+        self.content_database = []  # Simulated content database
+        self.popular_queries = TTLCache(maxsize=100, ttl=86400)  # Cache popular queries for 1 day
+        self.feedback_database = []  # Simulated feedback database
 
-    async def search(self, query: str, filters: Optional[Dict[str, Any]] = None, limit: int = 10, offset: int = 0, retries: int = 3) -> List[Dict[str, Any]]:
+    async def search(self, query: str, filters: Optional[Dict[str, Any]], limit: int, offset: int, query_embedding: Optional[List[float]] = None) -> List[Dict[str, Any]]:
         try:
-            self._validate_search_params(query, filters, limit, offset)
+            cache_key = f"{query}_{str(filters)}_{limit}_{offset}"
+            if cache_key in self.cache:
+                return self.cache[cache_key]
+
+            # Simulated search logic
+            results = self._perform_search(query, filters, query_embedding)
             
-            cache_key = f"{query}:{json.dumps(filters)}:{limit}:{offset}"
-            cached_result = self._get_from_cache(cache_key)
-            if cached_result:
-                return cached_result
-
-            for attempt in range(retries):
-                try:
-                    query_embedding = await self.text_embedding_service.get_cached_embedding(query)
-                    results = await self.text_embedding_service.search_similar_content(query, limit=limit * 2)
-                    break
-                except Exception as e:
-                    if attempt == retries - 1:
-                        logger.error(f"Failed to perform search after {retries} attempts: {str(e)}")
-                        raise HTTPException(status_code=500, detail="Search operation failed")
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-
-            filtered_results = self._apply_filters(results, filters)
-            ranked_results = self._rank_results(filtered_results, query)
-            paginated_results = ranked_results[offset:offset + limit]
-
-            self._add_to_cache(cache_key, paginated_results)
+            # Apply advanced ranking
+            ranked_results = self._rank_results(results, query)
+            
+            # Apply pagination
+            paginated_results = ranked_results[offset:offset+limit]
+            
+            self.cache[cache_key] = paginated_results
             return paginated_results
-        except ValueError as ve:
-            logger.warning(f"Invalid search parameters: {str(ve)}")
-            raise HTTPException(status_code=400, detail=str(ve))
         except Exception as e:
-            logger.error(f"Unexpected error in search: {str(e)}")
-            raise HTTPException(status_code=500, detail="An unexpected error occurred during the search")
+            logger.error(f"Error in search: {str(e)}")
+            raise HTTPException(status_code=500, detail="An error occurred during the search process")
 
-    def _validate_search_params(self, query: str, filters: Optional[Dict[str, Any]], limit: int, offset: int):
-        if not query or len(query.strip()) == 0:
-            raise ValueError("Query cannot be empty")
-        if limit < 1 or limit > 100:
-            raise ValueError("Limit must be between 1 and 100")
-        if offset < 0:
-            raise ValueError("Offset cannot be negative")
+    def _perform_search(self, query: str, filters: Optional[Dict[str, Any]], query_embedding: Optional[List[float]]) -> List[Dict[str, Any]]:
+        # Simulated search logic
+        all_results = self.content_database.copy()
+        
+        # Apply filters
         if filters:
-            if not isinstance(filters, dict):
-                raise ValueError("Filters must be a dictionary")
-            for key, value in filters.items():
-                if not isinstance(key, str):
-                    raise ValueError("Filter keys must be strings")
-
-    def _get_from_cache(self, key: str) -> Optional[List[Dict[str, Any]]]:
-        if key in self.search_cache:
-            result, timestamp = self.search_cache[key]
-            if time.time() - timestamp < self.cache_ttl:
-                logger.info(f"Cache hit for key: {key}")
-                return result
-            else:
-                del self.search_cache[key]
-        return None
-
-    def _add_to_cache(self, key: str, value: List[Dict[str, Any]]):
-        self.search_cache[key] = (value, time.time())
-        logger.info(f"Added to cache: {key}")
-
-    def _apply_filters(self, results: List[Dict[str, Any]], filters: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not filters:
-            return results
-
-        filtered_results = []
-        for result in results:
-            if all(self._match_filter(result, key, value) for key, value in filters.items()):
-                filtered_results.append(result)
-
-        return filtered_results
-
-    def _match_filter(self, result: Dict[str, Any], key: str, value: Any) -> bool:
-        if key not in result:
-            return False
-
-        if isinstance(value, list):
-            return any(self._fuzzy_match(str(result[key]), str(v)) for v in value)
+            all_results = [
+                result for result in all_results
+                if (not filters.get('content_type') or result['content_type'] == filters['content_type']) and
+                (not filters.get('difficulty_level') or result['difficulty_level'] == filters['difficulty_level']) and
+                (not filters.get('date_range') or (filters['date_range'][0] <= result['date'] <= filters['date_range'][1])) and
+                (not filters.get('tags') or all(tag in result['tags'] for tag in filters['tags'])) and
+                (not filters.get('min_rating') or result['rating'] >= filters['min_rating'])
+            ]
+        
+        # Perform semantic search if query_embedding is provided
+        if query_embedding:
+            all_results = sorted(
+                all_results,
+                key=lambda x: cosine_similarity([query_embedding], [x['embedding']])[0][0],
+                reverse=True
+            )
         else:
-            return self._fuzzy_match(str(result[key]), str(value))
-
-    def _fuzzy_match(self, str1: str, str2: str, threshold: int = 80) -> bool:
-        return fuzz.ratio(str1.lower(), str2.lower()) >= threshold
+            # Fallback to TF-IDF based search
+            tfidf_matrix = self.tfidf_vectorizer.fit_transform([result['content'] for result in all_results])
+            query_vec = self.tfidf_vectorizer.transform([query])
+            similarities = cosine_similarity(query_vec, tfidf_matrix)[0]
+            all_results = [result for _, result in sorted(zip(similarities, all_results), key=lambda pair: pair[0], reverse=True)]
+        
+        return all_results
 
     def _rank_results(self, results: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
         for result in results:
-            result['relevance_score'] = self._calculate_relevance_score(result, query)
-
+            # Calculate relevance score based on multiple factors
+            text_similarity = self._calculate_text_similarity(query, result['content'])
+            recency_score = self._calculate_recency_score(result['date'])
+            popularity_score = self._calculate_popularity_score(result['views'], result['likes'])
+            
+            result['relevance_score'] = (
+                0.5 * text_similarity +
+                0.3 * recency_score +
+                0.2 * popularity_score
+            )
+        
         return sorted(results, key=lambda x: x['relevance_score'], reverse=True)
 
-    def _calculate_relevance_score(self, result: Dict[str, Any], query: str) -> float:
-        content_relevance = fuzz.ratio(query.lower(), result['content'].lower()) / 100
-        title_relevance = fuzz.ratio(query.lower(), result.get('title', '').lower()) / 100
-        popularity_score = min(result.get('popularity', 0) / 100, 1.0)
-        recency_score = min(result.get('recency', 0) / 100, 1.0)
+    def _calculate_text_similarity(self, query: str, content: str) -> float:
+        query_vec = self.tfidf_vectorizer.transform([query])
+        content_vec = self.tfidf_vectorizer.transform([content])
+        return cosine_similarity(query_vec, content_vec)[0][0]
 
-        # Adjusted weights for a more sophisticated ranking
-        return (0.4 * content_relevance) + (0.3 * title_relevance) + (0.2 * popularity_score) + (0.1 * recency_score)
+    def _calculate_recency_score(self, date: datetime) -> float:
+        days_old = (datetime.now() - date).days
+        return max(0, 1 - (days_old / 365))  # Score decreases linearly over a year
+
+    def _calculate_popularity_score(self, views: int, likes: int) -> float:
+        return min(1, (views + likes * 2) / 10000)  # Assume 10000 as a high number of views+likes
+
+    async def get_total_count(self, query: str, filters: Optional[Dict[str, Any]]) -> int:
+        results = self._perform_search(query, filters, None)
+        return len(results)
 
     async def get_facets(self, results: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
-        try:
-            facets = {}
-            for result in results:
-                for key, value in result.items():
-                    if key not in facets:
-                        facets[key] = {}
-                    if value not in facets[key]:
-                        facets[key][value] = 0
-                    facets[key][value] += 1
-            return facets
-        except Exception as e:
-            logger.error(f"Error generating facets: {str(e)}")
-            raise HTTPException(status_code=500, detail="Failed to generate facets")
+        facets = {
+            "content_type": {},
+            "difficulty_level": {},
+            "tags": {}
+        }
+        
+        for result in results:
+            facets["content_type"][result["content_type"]] = facets["content_type"].get(result["content_type"], 0) + 1
+            facets["difficulty_level"][result["difficulty_level"]] = facets["difficulty_level"].get(result["difficulty_level"], 0) + 1
+            for tag in result["tags"]:
+                facets["tags"][tag] = facets["tags"].get(tag, 0) + 1
+        
+        return facets
 
-advanced_search_service = AdvancedSearchService(get_text_embedding_service())
+    async def expand_query(self, query: str) -> str:
+        try:
+            expanded_query = await self.llm_orchestrator.process_request([
+                {"role": "system", "content": "You are an AI assistant that expands search queries to improve search results."},
+                {"role": "user", "content": f"Expand the following search query: {query}"}
+            ], "low")
+            return expanded_query.strip()
+        except Exception as e:
+            logger.error(f"Error in query expansion: {str(e)}")
+            return query  # Return original query if expansion fails
+
+    async def get_all_tags(self) -> List[str]:
+        # Simulated tag retrieval
+        all_tags = set()
+        for content in self.content_database:
+            all_tags.update(content['tags'])
+        return list(all_tags)
+
+    async def get_popular_queries(self, limit: int) -> List[str]:
+        # Return cached popular queries if available
+        if 'popular_queries' in self.popular_queries:
+            return self.popular_queries['popular_queries'][:limit]
+        
+        # Simulated popular query retrieval
+        query_counts = {}
+        for feedback in self.feedback_database:
+            query_counts[feedback['query']] = query_counts.get(feedback['query'], 0) + 1
+        
+        popular_queries = sorted(query_counts.items(), key=lambda x: x[1], reverse=True)
+        result = [query for query, _ in popular_queries[:limit]]
+        
+        # Cache the result
+        self.popular_queries['popular_queries'] = result
+        
+        return result
+
+    async def submit_search_feedback(self, user_id: str, query: str, result_id: str, is_relevant: bool):
+        # Simulated feedback submission
+        feedback = {
+            'user_id': user_id,
+            'query': query,
+            'result_id': result_id,
+            'is_relevant': is_relevant,
+            'timestamp': datetime.now()
+        }
+        self.feedback_database.append(feedback)
+        
+        # Clear popular queries cache to reflect new feedback
+        self.popular_queries.clear()
+
+advanced_search_service = AdvancedSearchService(get_text_embedding_service(), get_llm_orchestrator())
 
 def get_advanced_search_service() -> AdvancedSearchService:
     return advanced_search_service

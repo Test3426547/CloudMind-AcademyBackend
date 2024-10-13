@@ -2,6 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from supabase import Client
 from auth_config import get_supabase_client
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 from routers import (
     notification,
     analytics,
@@ -29,7 +31,8 @@ from routers import (
     certificate,
     course,
     exam,
-    user  # Add this line
+    user,
+    advanced_search  # Add this line
 )
 
 app = FastAPI()
@@ -70,7 +73,12 @@ app.include_router(web_scraping.router)
 app.include_router(certificate.router)
 app.include_router(course.router)
 app.include_router(exam.router)
-app.include_router(user.router)  # Add this line
+app.include_router(user.router)
+app.include_router(advanced_search.router)  # Add this line
+
+@app.on_event("startup")
+async def startup():
+    FastAPICache.init(InMemoryBackend())
 
 if __name__ == "__main__":
     import uvicorn
