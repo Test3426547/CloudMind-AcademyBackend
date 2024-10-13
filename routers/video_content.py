@@ -17,9 +17,20 @@ class VideoUpload(BaseModel):
 
 class VideoRecommendation(BaseModel):
     video_id: str
-    similarity: float
+    score: float
+    title: str
 
-@router.post("/videos/upload")
+class VideoAnalysis(BaseModel):
+    tags: List[str]
+    main_topic: str
+    target_audience: str
+    difficulty_level: str
+    estimated_duration: int
+    key_concepts: List[str]
+    sentiment: str
+    named_entities: List[str]
+
+@router.post("/videos/upload", response_model=Dict[str, Any])
 async def upload_video(
     video_data: VideoUpload,
     user: User = Depends(oauth2_scheme),
@@ -36,7 +47,7 @@ async def upload_video(
         logger.error(f"Unexpected error in upload_video: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while uploading the video")
 
-@router.get("/videos/{video_id}")
+@router.get("/videos/{video_id}", response_model=Dict[str, Any])
 async def get_video(
     video_id: str,
     user: User = Depends(oauth2_scheme),
@@ -70,7 +81,7 @@ async def recommend_videos(
         logger.error(f"Unexpected error in recommend_videos: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating video recommendations")
 
-@router.get("/videos/{video_id}/summary")
+@router.get("/videos/{video_id}/summary", response_model=Dict[str, str])
 async def get_video_summary(
     video_id: str,
     user: User = Depends(oauth2_scheme),
@@ -87,7 +98,7 @@ async def get_video_summary(
         logger.error(f"Unexpected error in get_video_summary: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the video summary")
 
-@router.get("/videos/cluster")
+@router.get("/videos/cluster", response_model=Dict[str, List[str]])
 async def cluster_videos(
     num_clusters: int = 5,
     user: User = Depends(oauth2_scheme),
@@ -103,3 +114,21 @@ async def cluster_videos(
     except Exception as e:
         logger.error(f"Unexpected error in cluster_videos: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while clustering videos")
+
+@router.get("/videos/{video_id}/analyze", response_model=VideoAnalysis)
+async def analyze_video(
+    video_id: str,
+    user: User = Depends(oauth2_scheme),
+    video_service: VideoContentService = Depends(get_video_content_service),
+):
+    try:
+        video = await video_service.get_video(video_id)
+        analysis = await video_service.analyze_video_content(video['title'], video['description'])
+        logger.info(f"Analysis generated for video {video_id}")
+        return VideoAnalysis(**analysis)
+    except HTTPException as e:
+        logger.warning(f"HTTP error in analyze_video: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_video: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while analyzing the video")
