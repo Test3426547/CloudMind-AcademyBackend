@@ -3,116 +3,116 @@ from typing import List, Dict, Any
 from fastapi import HTTPException
 import logging
 from datetime import datetime, timedelta
-from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
-from services.text_embedding_service import TextEmbeddingService, get_text_embedding_service
 import random
+import math
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 class NotificationService:
-    def __init__(self, llm_orchestrator: LLMOrchestrator, text_embedding_service: TextEmbeddingService):
-        self.llm_orchestrator = llm_orchestrator
-        self.text_embedding_service = text_embedding_service
+    def __init__(self):
         self.notifications = {}
-        self.user_preferences = {}
-        self.user_embeddings = {}
+        self.user_preferences = defaultdict(lambda: {"quiet_hours": [], "frequency": "daily"})
+        self.user_embeddings = defaultdict(lambda: [random.random() for _ in range(100)])  # Simulated user embeddings
 
-    async def create_notification(self, user_id: str, notification_type: str, content: str) -> Dict[str, Any]:
+    async def create_notification(self, user_id: str, content: str, importance: float) -> Dict[str, Any]:
         try:
             notification_id = f"notif_{len(self.notifications) + 1}"
-            personalized_content = await self._generate_personalized_content(user_id, notification_type, content)
-            send_time = await self._calculate_optimal_send_time(user_id)
+            embedding = self._generate_content_embedding(content)
+            scheduled_time = await self._smart_schedule_notification(user_id, importance)
+            personalized_content = await self._personalize_content(user_id, content)
             
-            notification = {
-                "id": notification_id,
+            self.notifications[notification_id] = {
                 "user_id": user_id,
-                "type": notification_type,
                 "content": personalized_content,
-                "created_at": datetime.now(),
-                "send_time": send_time,
-                "status": "pending"
+                "importance": importance,
+                "embedding": embedding,
+                "scheduled_time": scheduled_time,
+                "sent": False
             }
-            
-            self.notifications[notification_id] = notification
-            return notification
+            return {"notification_id": notification_id, "scheduled_time": scheduled_time}
         except Exception as e:
             logger.error(f"Error creating notification: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to create notification")
 
     async def get_user_notifications(self, user_id: str) -> List[Dict[str, Any]]:
-        return [notif for notif in self.notifications.values() if notif["user_id"] == user_id]
+        return [notif for notif in self.notifications.values() if notif["user_id"] == user_id and not notif["sent"]]
 
-    async def update_notification_status(self, notification_id: str, status: str) -> Dict[str, Any]:
-        if notification_id not in self.notifications:
-            raise HTTPException(status_code=404, detail="Notification not found")
-        
-        self.notifications[notification_id]["status"] = status
-        return self.notifications[notification_id]
+    async def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> Dict[str, str]:
+        self.user_preferences[user_id].update(preferences)
+        return {"message": "User preferences updated successfully"}
 
-    async def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
-        self.user_preferences[user_id] = preferences
-        await self._update_user_embedding(user_id)
-        return self.user_preferences[user_id]
-
-    async def _generate_personalized_content(self, user_id: str, notification_type: str, content: str) -> str:
-        user_embedding = await self._get_user_embedding(user_id)
-        prompt = f"Generate a personalized notification for a user with the following context:\n\n"
-        prompt += f"User embedding: {user_embedding[:10]}...\n"  # Use only a part of the embedding for brevity
-        prompt += f"Notification type: {notification_type}\n"
-        prompt += f"Original content: {content}\n\n"
-        prompt += "Please provide a personalized version of the notification content."
-
-        personalized_content = await self.llm_orchestrator.process_request([
-            {"role": "system", "content": "You are an AI assistant specializing in creating personalized notification content."},
-            {"role": "user", "content": prompt}
-        ], "medium")
-
-        return personalized_content.strip()
-
-    async def _calculate_optimal_send_time(self, user_id: str) -> datetime:
-        user_prefs = self.user_preferences.get(user_id, {})
-        preferred_times = user_prefs.get("preferred_notification_times", [])
-        
-        if not preferred_times:
-            return datetime.now() + timedelta(minutes=random.randint(5, 60))
-        
+    async def _smart_schedule_notification(self, user_id: str, importance: float) -> datetime:
         now = datetime.now()
-        optimal_time = min(preferred_times, key=lambda t: abs(now.replace(hour=t.hour, minute=t.minute) - now))
-        return now.replace(hour=optimal_time.hour, minute=optimal_time.minute)
-
-    async def _get_user_embedding(self, user_id: str) -> List[float]:
-        if user_id not in self.user_embeddings:
-            await self._update_user_embedding(user_id)
-        return self.user_embeddings[user_id]
-
-    async def _update_user_embedding(self, user_id: str):
-        user_prefs = self.user_preferences.get(user_id, {})
-        user_info = f"User preferences: {user_prefs}"
-        self.user_embeddings[user_id] = await self.text_embedding_service.get_embedding(user_info)
-
-    async def analyze_notification_sentiment(self, notification_id: str, user_response: str) -> Dict[str, Any]:
-        if notification_id not in self.notifications:
-            raise HTTPException(status_code=404, detail="Notification not found")
+        user_prefs = self.user_preferences[user_id]
+        quiet_hours = user_prefs["quiet_hours"]
         
-        prompt = f"Analyze the sentiment of the following user response to a notification:\n\n{user_response}\n\nProvide a sentiment score between -1 (very negative) and 1 (very positive), and a brief explanation."
+        if importance > 0.8:  # High importance notifications are sent immediately
+            return now
         
-        analysis = await self.llm_orchestrator.process_request([
-            {"role": "system", "content": "You are an AI assistant specializing in sentiment analysis."},
-            {"role": "user", "content": prompt}
-        ], "low")
+        # Simulated optimal time calculation using a basic time series analysis
+        hour_scores = [0] * 24
+        for hour in range(24):
+            if any(start <= hour < end for start, end in quiet_hours):
+                continue
+            hour_scores[hour] = math.sin(hour * math.pi / 12) + random.uniform(0, 0.5)
         
-        # Parse the sentiment score and explanation from the analysis
-        lines = analysis.strip().split("\n")
-        sentiment_score = float(lines[0])
-        explanation = "\n".join(lines[1:])
+        best_hour = hour_scores.index(max(hour_scores))
+        scheduled_time = now.replace(hour=best_hour, minute=random.randint(0, 59))
+        if scheduled_time < now:
+            scheduled_time += timedelta(days=1)
         
-        return {
-            "notification_id": notification_id,
-            "sentiment_score": sentiment_score,
-            "explanation": explanation
-        }
+        return scheduled_time
 
-notification_service = NotificationService(get_llm_orchestrator(), get_text_embedding_service())
+    def _generate_content_embedding(self, content: str) -> List[float]:
+        # Simulated content embedding generation
+        words = content.lower().split()
+        embedding = [0.0] * 100
+        for word in words:
+            for i in range(100):
+                embedding[i] += hash(word + str(i)) % 1000 / 1000
+        magnitude = math.sqrt(sum(x**2 for x in embedding))
+        return [x / magnitude for x in embedding]
+
+    async def _personalize_content(self, user_id: str, content: str) -> str:
+        user_embedding = self.user_embeddings[user_id]
+        content_embedding = self._generate_content_embedding(content)
+        
+        # Simulated content personalization using cosine similarity
+        similarity = sum(a * b for a, b in zip(user_embedding, content_embedding))
+        personalization_factor = (similarity + 1) / 2  # Scale to 0-1
+        
+        # Simulated text generation for personalization
+        personalized_prefix = "Based on your interests, " if personalization_factor > 0.7 else ""
+        return personalized_prefix + content
+
+    async def process_notifications(self) -> None:
+        now = datetime.now()
+        for notif_id, notif in self.notifications.items():
+            if not notif["sent"] and notif["scheduled_time"] <= now:
+                # Simulated notification sending process
+                user_id = notif["user_id"]
+                content = notif["content"]
+                importance = notif["importance"]
+                
+                # Simulated sentiment analysis
+                sentiment_score = self._analyze_sentiment(content)
+                
+                logger.info(f"Sending notification to user {user_id}: {content}")
+                logger.info(f"Notification importance: {importance}, Sentiment: {sentiment_score}")
+                
+                notif["sent"] = True
+
+    def _analyze_sentiment(self, text: str) -> float:
+        # Simulated sentiment analysis using a basic lexicon-based approach
+        positive_words = set(["good", "great", "excellent", "amazing", "wonderful", "fantastic"])
+        negative_words = set(["bad", "poor", "terrible", "awful", "horrible", "disappointing"])
+        
+        words = text.lower().split()
+        sentiment_score = sum(1 for word in words if word in positive_words) - sum(1 for word in words if word in negative_words)
+        return max(min(sentiment_score / len(words), 1), -1)  # Normalize to [-1, 1]
+
+notification_service = NotificationService()
 
 def get_notification_service() -> NotificationService:
     return notification_service
