@@ -27,7 +27,8 @@ from routers import (
     voice_recognition,
     web_scraping,
     certificate,
-    course  # Add this line
+    course,
+    exam  # Add this line
 )
 
 app = FastAPI()
@@ -66,7 +67,8 @@ app.include_router(text_embedding.router)
 app.include_router(voice_recognition.router)
 app.include_router(web_scraping.router)
 app.include_router(certificate.router)
-app.include_router(course.router)  # Add this line
+app.include_router(course.router)
+app.include_router(exam.router)  # Add this line
 
 if __name__ == "__main__":
     import uvicorn
