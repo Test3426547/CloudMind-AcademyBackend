@@ -1,69 +1,53 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from models.user import User
-from models.certificate import Certificate, CertificateCreate
 from services.certificate_service import CertificateService, get_certificate_service
-from services.blockchain_service import BlockchainService, get_blockchain_service
-from typing import List
-from pydantic import BaseModel
+from typing import Dict, Any
+from pydantic import BaseModel, Field
+import logging
 
 router = APIRouter()
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+logger = logging.getLogger(__name__)
 
-class VerificationRequest(BaseModel):
-    certificate_hash: str
+class CertificateRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    course_id: str = Field(..., min_length=1)
+    completion_date: str = Field(..., min_length=1)
 
-@router.post("/certificates", response_model=Certificate)
+class CertificateVerificationRequest(BaseModel):
+    certificate_hash: str = Field(..., min_length=64, max_length=64)
+
+@router.post("/certificates/create")
 async def create_certificate(
-    certificate: CertificateCreate,
-    token: str = Depends(oauth2_scheme),
-    cert_service: CertificateService = Depends(get_certificate_service),
-    blockchain_service: BlockchainService = Depends(get_blockchain_service)
+    request: CertificateRequest,
+    user: User = Depends(oauth2_scheme),
+    certificate_service: CertificateService = Depends(get_certificate_service),
 ):
-    # For simplicity, we're not validating the token here. In a real-world scenario, you should validate the token and get the user ID from it.
-    user_id = "user456"  # Hardcoded for testing purposes
-    new_certificate = await cert_service.create_certificate(certificate, user_id)
-    return new_certificate
+    try:
+        result = await certificate_service.create_certificate(request.user_id, request.course_id, request.completion_date)
+        logger.info(f"Certificate created for user {request.user_id}, course {request.course_id}")
+        return result
+    except HTTPException as e:
+        logger.warning(f"HTTP error in create_certificate: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in create_certificate: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while creating the certificate")
 
-@router.get("/certificates/{certificate_id}", response_model=Certificate)
-async def get_certificate(
-    certificate_id: str,
-    token: str = Depends(oauth2_scheme),
-    cert_service: CertificateService = Depends(get_certificate_service)
-):
-    certificate = await cert_service.get_certificate(certificate_id)
-    if certificate is None:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    return certificate
-
-@router.get("/certificates", response_model=List[Certificate])
-async def list_certificates(
-    token: str = Depends(oauth2_scheme),
-    cert_service: CertificateService = Depends(get_certificate_service)
-):
-    # For simplicity, we're not validating the token here. In a real-world scenario, you should validate the token and get the user ID from it.
-    user_id = "user456"  # Hardcoded for testing purposes
-    return await cert_service.list_certificates(user_id)
-
-@router.post("/certificates/{certificate_id}/verify")
+@router.post("/certificates/verify")
 async def verify_certificate(
-    certificate_id: str,
-    verification_request: VerificationRequest,
-    token: str = Depends(oauth2_scheme),
-    cert_service: CertificateService = Depends(get_certificate_service)
+    request: CertificateVerificationRequest,
+    user: User = Depends(oauth2_scheme),
+    certificate_service: CertificateService = Depends(get_certificate_service),
 ):
-    is_valid = await cert_service.verify_certificate(certificate_id, verification_request.certificate_hash)
-    return {"is_valid": is_valid}
-
-@router.post("/certificates/{certificate_id}/revoke")
-async def revoke_certificate(
-    certificate_id: str,
-    token: str = Depends(oauth2_scheme),
-    cert_service: CertificateService = Depends(get_certificate_service)
-):
-    certificate = await cert_service.get_certificate(certificate_id)
-    if certificate is None:
-        raise HTTPException(status_code=404, detail="Certificate not found")
-    await cert_service.revoke_certificate(certificate_id)
-    return {"message": "Certificate revoked successfully"}
+    try:
+        is_valid = await certificate_service.verify_certificate(request.certificate_hash)
+        logger.info(f"Certificate verification completed for hash {request.certificate_hash}")
+        return {"is_valid": is_valid}
+    except HTTPException as e:
+        logger.warning(f"HTTP error in verify_certificate: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in verify_certificate: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while verifying the certificate")

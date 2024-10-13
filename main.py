@@ -25,7 +25,8 @@ from routers import (
     supabase,
     text_embedding,
     voice_recognition,
-    web_scraping  # Add this line
+    web_scraping,
+    certificate  # Add this line
 )
 
 app = FastAPI()
@@ -62,7 +63,8 @@ app.include_router(lms_integration.router)
 app.include_router(supabase.router)
 app.include_router(text_embedding.router)
 app.include_router(voice_recognition.router)
-app.include_router(web_scraping.router)  # Add this line
+app.include_router(web_scraping.router)
+app.include_router(certificate.router)  # Add this line
 
 if __name__ == "__main__":
     import uvicorn

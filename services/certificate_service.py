@@ -1,141 +1,116 @@
 import asyncio
-from typing import Dict, List, Any
+from typing import List, Dict, Any
 from fastapi import HTTPException
 import logging
-import random
-from datetime import datetime, timedelta
+from services.llm_orchestrator import LLMOrchestrator, get_llm_orchestrator
+from services.text_embedding_service import TextEmbeddingService, get_text_embedding_service
+import os
+from web3 import Web3
 import hashlib
-import json
+import numpy as np
+from sklearn.ensemble import IsolationForest
 
 logger = logging.getLogger(__name__)
 
-class SimulatedMLModel:
-    def predict_anomaly(self, data):
-        # Simulated anomaly detection
-        return random.uniform(-1, 1)
-
-    def forecast(self, data, steps):
-        # Simulated forecasting
-        return [sum(data) / len(data) + random.uniform(-10, 10) for _ in range(steps)]
-
-class SimulatedNLPModel:
-    def analyze(self, text):
-        # Simulated NLP analysis
-        sentiments = ["positive", "negative", "neutral"]
-        return {
-            "sentiment": random.choice(sentiments),
-            "sentiment_score": random.uniform(0, 1),
-            "summary": f"Summary of: {text[:50]}...",
-            "entities": [{"type": "PERSON", "text": "John Doe"}, {"type": "ORG", "text": "CloudMind Academy"}]
-        }
-
 class CertificateService:
-    def __init__(self):
-        self.certificates = {}
-        self.ml_model = SimulatedMLModel()
-        self.nlp_model = SimulatedNLPModel()
+    def __init__(self, llm_orchestrator: LLMOrchestrator, text_embedding_service: TextEmbeddingService):
+        self.llm_orchestrator = llm_orchestrator
+        self.text_embedding_service = text_embedding_service
+        self.ethereum_node_url = os.getenv("ETHEREUM_NODE_URL")
+        self.contract_address = os.getenv("CERTIFICATE_CONTRACT_ADDRESS")
+        self.private_key = os.getenv("ETHEREUM_PRIVATE_KEY")
+        self.web3 = Web3(Web3.HTTPProvider(self.ethereum_node_url))
+        self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)
+        self.certificate_data = []
 
-    async def store_certificate(self, certificate_id: str, certificate_hash: str, certificate_content: str) -> str:
-        self.certificates[certificate_id] = {
-            'hash': certificate_hash,
-            'revoked': False,
-            'content': certificate_content,
-            'created_at': datetime.now()
-        }
-        await self._analyze_certificate_content(certificate_id)
-        return await self._simulate_blockchain_transaction(f"store_{certificate_id}")
-
-    async def verify_certificate(self, certificate_id: str, certificate_hash: str) -> Dict[str, Any]:
-        if certificate_id in self.certificates:
-            is_valid = (self.certificates[certificate_id]['hash'] == certificate_hash and
-                        not self.certificates[certificate_id]['revoked'])
-            anomaly_score = await self._detect_anomaly(certificate_id)
+    async def create_certificate(self, user_id: str, course_id: str, completion_date: str) -> Dict[str, Any]:
+        try:
+            # Generate certificate content using AI
+            certificate_content = await self._generate_certificate_content(user_id, course_id, completion_date)
+            
+            # Create hash of the certificate content
+            content_hash = hashlib.sha256(certificate_content.encode()).hexdigest()
+            
+            # Store the hash on the blockchain
+            tx_hash = await self._store_on_blockchain(content_hash)
+            
+            # Analyze certificate data for anomalies
+            await self._analyze_certificate_data(user_id, course_id, completion_date)
+            
             return {
-                "is_valid": is_valid,
-                "anomaly_score": anomaly_score,
-                "warning": self._get_anomaly_warning(anomaly_score),
-                "verification_time": await self._simulate_blockchain_transaction(f"verify_{certificate_id}")
+                "user_id": user_id,
+                "course_id": course_id,
+                "completion_date": completion_date,
+                "content": certificate_content,
+                "blockchain_tx": tx_hash
             }
-        return {"is_valid": False, "anomaly_score": 1.0, "warning": "Certificate not found"}
+        except Exception as e:
+            logger.error(f"Error creating certificate: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to create certificate")
 
-    async def revoke_certificate(self, certificate_id: str) -> str:
-        if certificate_id in self.certificates:
-            self.certificates[certificate_id]['revoked'] = True
-        return await self._simulate_blockchain_transaction(f"revoke_{certificate_id}")
+    async def verify_certificate(self, certificate_hash: str) -> bool:
+        try:
+            # Verify the certificate hash on the blockchain
+            is_valid = await self._verify_on_blockchain(certificate_hash)
+            return is_valid
+        except Exception as e:
+            logger.error(f"Error verifying certificate: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to verify certificate")
 
-    async def _detect_anomaly(self, certificate_id: str) -> float:
-        certificate_data = self.certificates.get(certificate_id, {})
-        features = [
-            len(certificate_data.get('content', '')),
-            (datetime.now() - certificate_data.get('created_at', datetime.now())).days,
-            int(hashlib.md5(certificate_data.get('hash', '').encode()).hexdigest(), 16) % 1000
-        ]
-        return self.ml_model.predict_anomaly(features)
-
-    def _get_anomaly_warning(self, anomaly_score: float) -> str:
-        if anomaly_score > 0.8:
-            return "High risk of fraudulent certificate"
-        elif anomaly_score > 0.6:
-            return "Moderate risk, additional verification recommended"
-        elif anomaly_score > 0.4:
-            return "Low risk, but exercise caution"
-        return "No significant anomalies detected"
-
-    async def _analyze_certificate_content(self, certificate_id: str):
-        content = self.certificates[certificate_id]['content']
-        analysis = self.nlp_model.analyze(content)
-        self.certificates[certificate_id]['content_analysis'] = analysis
-
-    async def get_issuance_trend(self, days: int = 30) -> Dict[str, Any]:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+    async def _generate_certificate_content(self, user_id: str, course_id: str, completion_date: str) -> str:
+        prompt = f"""Generate a certificate of completion for:
+        User ID: {user_id}
+        Course ID: {course_id}
+        Completion Date: {completion_date}
         
-        daily_counts = []
-        current_date = start_date
-        while current_date <= end_date:
-            count = sum(1 for cert in self.certificates.values() if start_date <= cert['created_at'] < current_date)
-            daily_counts.append(count)
-            current_date += timedelta(days=1)
-
-        forecast_steps = 7  # Forecast for the next week
-        trend_forecast = self.ml_model.forecast(daily_counts, forecast_steps)
+        The certificate should include a formal congratulatory message, the course name, and a brief description of skills acquired.
+        """
         
-        return {
-            "historical_data": [
-                {"date": (start_date + timedelta(days=i)).strftime("%Y-%m-%d"), "count": count}
-                for i, count in enumerate(daily_counts)
-            ],
-            "trend_forecast": [
-                {"date": (end_date + timedelta(days=i+1)).strftime("%Y-%m-%d"), "predicted_count": count}
-                for i, count in enumerate(trend_forecast)
-            ]
+        content = await self.llm_orchestrator.process_request([
+            {"role": "system", "content": "You are an AI assistant specialized in generating formal certificates."},
+            {"role": "user", "content": prompt}
+        ], "medium")
+        
+        return content.strip()
+
+    async def _store_on_blockchain(self, content_hash: str) -> str:
+        # Simplified blockchain interaction (replace with actual smart contract interaction)
+        nonce = self.web3.eth.get_transaction_count(self.web3.eth.account.from_key(self.private_key).address)
+        tx = {
+            'nonce': nonce,
+            'to': self.contract_address,
+            'value': self.web3.to_wei(0, 'ether'),
+            'gas': 2000000,
+            'gasPrice': self.web3.eth.gas_price,
+            'data': self.web3.to_hex(text=content_hash)
         }
+        signed_tx = self.web3.eth.account.sign_transaction(tx, self.private_key)
+        tx_hash = self.web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        return self.web3.to_hex(tx_hash)
 
-    async def get_certificate_insights(self, certificate_id: str) -> Dict[str, Any]:
-        if certificate_id not in self.certificates:
-            raise HTTPException(status_code=404, detail="Certificate not found")
+    async def _verify_on_blockchain(self, certificate_hash: str) -> bool:
+        # Simplified blockchain verification (replace with actual smart contract interaction)
+        # For demonstration, we'll assume the verification is successful if the hash exists on the blockchain
+        tx = self.web3.eth.get_transaction(certificate_hash)
+        return tx is not None
+
+    async def _analyze_certificate_data(self, user_id: str, course_id: str, completion_date: str):
+        # Convert data to numerical format for anomaly detection
+        user_embedding = await self.text_embedding_service.get_embedding(user_id)
+        course_embedding = await self.text_embedding_service.get_embedding(course_id)
+        date_embedding = await self.text_embedding_service.get_embedding(completion_date)
         
-        certificate = self.certificates[certificate_id]
-        content_analysis = certificate.get('content_analysis', {})
+        certificate_vector = np.concatenate([user_embedding, course_embedding, date_embedding])
+        self.certificate_data.append(certificate_vector)
         
-        return {
-            "certificate_id": certificate_id,
-            "issuance_date": certificate['created_at'].strftime("%Y-%m-%d"),
-            "revocation_status": "Revoked" if certificate['revoked'] else "Active",
-            "content_sentiment": content_analysis.get('sentiment', 'Unknown'),
-            "sentiment_score": content_analysis.get('sentiment_score', 0.0),
-            "content_summary": content_analysis.get('summary', 'No summary available'),
-            "named_entities": content_analysis.get('entities', []),
-            "anomaly_score": await self._detect_anomaly(certificate_id)
-        }
+        if len(self.certificate_data) > 10:  # Minimum number of samples for meaningful anomaly detection
+            X = np.array(self.certificate_data)
+            self.isolation_forest.fit(X)
+            anomaly_scores = self.isolation_forest.decision_function(X)
+            if anomaly_scores[-1] < -0.5:  # Adjust threshold as needed
+                logger.warning(f"Potential anomaly detected in certificate issuance: User {user_id}, Course {course_id}")
 
-    async def _simulate_blockchain_transaction(self, transaction_id: str) -> str:
-        # Simulate blockchain transaction with random delay
-        delay = random.uniform(0.5, 2.0)
-        await asyncio.sleep(delay)
-        return f"tx_{transaction_id}_{hashlib.md5(transaction_id.encode()).hexdigest()[:6]}"
-
-certificate_service = CertificateService()
+certificate_service = CertificateService(get_llm_orchestrator(), get_text_embedding_service())
 
 def get_certificate_service() -> CertificateService:
     return certificate_service
