@@ -19,6 +19,10 @@ class ExamCreate(BaseModel):
 class ExamSubmit(BaseModel):
     answers: List[str] = Field(..., min_items=1)
 
+class GenerateQuestionsRequest(BaseModel):
+    course_id: str = Field(..., min_length=1)
+    num_questions: int = Field(10, ge=1, le=50)
+
 @router.post("/exams")
 async def create_exam(
     exam_data: ExamCreate,
@@ -103,3 +107,37 @@ async def recommend_exams(
     except Exception as e:
         logger.error(f"Unexpected error in recommend_exams: {str(e)}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while recommending exams")
+
+@router.post("/exams/generate-questions")
+async def generate_exam_questions(
+    request: GenerateQuestionsRequest,
+    user: User = Depends(oauth2_scheme),
+    exam_service: ExamService = Depends(get_exam_service),
+):
+    try:
+        questions = await exam_service.generate_exam_questions(request.course_id, request.num_questions)
+        logger.info(f"Generated {len(questions)} exam questions for course: {request.course_id}")
+        return {"generated_questions": questions}
+    except HTTPException as e:
+        logger.warning(f"HTTP error in generate_exam_questions: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in generate_exam_questions: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating exam questions")
+
+@router.get("/exams/{exam_id}/analyze")
+async def analyze_exam_performance(
+    exam_id: str,
+    user: User = Depends(oauth2_scheme),
+    exam_service: ExamService = Depends(get_exam_service),
+):
+    try:
+        analysis = await exam_service.analyze_exam_performance(exam_id)
+        logger.info(f"Analyzed exam performance for exam: {exam_id}")
+        return analysis
+    except HTTPException as e:
+        logger.warning(f"HTTP error in analyze_exam_performance: {str(e)}")
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_exam_performance: {str(e)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while analyzing exam performance")

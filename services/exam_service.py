@@ -61,20 +61,7 @@ class ExamService:
     async def _generate_exam_embedding(self, title: str, description: str, questions: List[Dict[str, Any]]) -> List[float]:
         # Simulated PyTorch-like embedding generation
         combined_text = f"{title} {description} {' '.join([q['question'] for q in questions])}"
-        words = combined_text.lower().split()
-        vocab = list(set(words))
-        word_to_idx = {word: i for i, word in enumerate(vocab)}
-        
-        # Create a simple bag-of-words embedding (simulating PyTorch's nn.Embedding)
-        embedding = [0.0] * len(vocab)
-        for word in words:
-            embedding[word_to_idx[word]] += 1.0
-        
-        # Apply simulated PyTorch's F.normalize
-        norm = math.sqrt(sum([x**2 for x in embedding]))
-        embedding = [x / norm for x in embedding]
-        
-        return embedding
+        return await self.text_embedding_service.get_embedding(combined_text)
 
     async def _estimate_exam_difficulty(self, questions: List[Dict[str, Any]]) -> float:
         # Simulated TensorFlow-like difficulty estimation
@@ -88,11 +75,10 @@ class ExamService:
             for q in questions
         ]
         
-        # Simulated TensorFlow's tf.keras.layers.Dense
+        # Simulated neural network for difficulty estimation
         weights = [[0.1, 0.2, 0.3, 0.4]]
         bias = [0.1]
         
-        # Simulated matrix multiplication and activation (tf.nn.tanh)
         difficulties = [
             math.tanh(sum([feature[i] * weights[0][i] for i in range(len(feature))]) + bias[0])
             for feature in question_features
@@ -104,25 +90,16 @@ class ExamService:
         # Simulated PyTorch-like grading system
         correct_answers = [q['correct_answer'] for q in exam['questions']]
         
-        # Simulated embedding generation for answers
-        answer_embeddings = [await self._generate_answer_embedding(ans) for ans in answers]
-        correct_embeddings = [await self._generate_answer_embedding(ans) for ans in correct_answers]
+        answer_embeddings = [await self.text_embedding_service.get_embedding(ans) for ans in answers]
+        correct_embeddings = [await self.text_embedding_service.get_embedding(ans) for ans in correct_answers]
         
-        # Simulated cosine similarity calculation (PyTorch's F.cosine_similarity)
         similarities = [
             self._cosine_similarity(ans_emb, correct_emb)
             for ans_emb, correct_emb in zip(answer_embeddings, correct_embeddings)
         ]
         
-        # Calculate score based on similarities
         score = sum(sim > 0.8 for sim in similarities) / len(similarities) * 100
         return score
-
-    async def _generate_answer_embedding(self, answer: str) -> List[float]:
-        # Simulated HuggingFace Transformers tokenization and embedding
-        words = answer.lower().split()
-        embedding = [hash(word) % 100 / 100 for word in words]  # Simple hash-based embedding
-        return embedding
 
     async def _generate_exam_feedback(self, exam: Dict[str, Any], answers: List[str], score: float) -> str:
         # Simulated HuggingFace Transformers text generation
@@ -130,7 +107,7 @@ class ExamService:
         feedback = await self.llm_orchestrator.process_request([
             {"role": "system", "content": "You are an AI exam feedback generator using advanced language models."},
             {"role": "user", "content": feedback_prompt}
-        ], "high")  # Using high quality for more sophisticated feedback
+        ], "high")
         return feedback.strip()
 
     async def recommend_exams(self, user_id: str, num_recommendations: int = 3) -> List[Dict[str, Any]]:
@@ -216,6 +193,88 @@ class ExamService:
             }
             for exam_id, popularity in popular_exams
         ]
+
+    async def generate_exam_questions(self, course_id: str, num_questions: int = 10) -> List[Dict[str, Any]]:
+        # Simulated HuggingFace Transformers question generation
+        course = await self._get_course_content(course_id)
+        prompt = f"Generate {num_questions} exam questions based on the following course content:\n\n{course}"
+        
+        generated_questions = await self.llm_orchestrator.process_request([
+            {"role": "system", "content": "You are an AI exam question generator using advanced language models."},
+            {"role": "user", "content": prompt}
+        ], "high")
+        
+        # Parse and structure the generated questions
+        questions = self._parse_generated_questions(generated_questions)
+        return questions
+
+    async def _get_course_content(self, course_id: str) -> str:
+        # Simulated course content retrieval
+        # In a real implementation, this would fetch the course content from a database
+        return f"This is the content for course {course_id}. It covers various topics related to the subject."
+
+    def _parse_generated_questions(self, generated_questions: str) -> List[Dict[str, Any]]:
+        # Simple parsing of generated questions
+        # In a real implementation, this would use more sophisticated NLP techniques
+        lines = generated_questions.strip().split('\n')
+        questions = []
+        for i in range(0, len(lines), 6):
+            if i + 5 < len(lines):
+                question = {
+                    "question": lines[i],
+                    "options": lines[i+1:i+5],
+                    "correct_answer": lines[i+5],
+                    "type": "multiple_choice"
+                }
+                questions.append(question)
+        return questions
+
+    async def analyze_exam_performance(self, exam_id: str) -> Dict[str, Any]:
+        if exam_id not in self.exams:
+            raise HTTPException(status_code=404, detail="Exam not found")
+
+        exam = self.exams[exam_id]
+        scores = [result[exam_id] for result in self.user_exam_results.values() if exam_id in result]
+
+        if not scores:
+            return {"message": "No exam results available for analysis"}
+
+        # Simulated NumPy operations
+        avg_score = sum(scores) / len(scores)
+        median_score = sorted(scores)[len(scores) // 2]
+        std_dev = math.sqrt(sum((s - avg_score) ** 2 for s in scores) / len(scores))
+
+        # Simulated sklearn-like clustering for difficulty analysis
+        difficulty_clusters = self._cluster_questions_by_difficulty(exam, scores)
+
+        return {
+            "exam_id": exam_id,
+            "average_score": avg_score,
+            "median_score": median_score,
+            "standard_deviation": std_dev,
+            "num_participants": len(scores),
+            "difficulty_analysis": difficulty_clusters
+        }
+
+    def _cluster_questions_by_difficulty(self, exam: Dict[str, Any], scores: List[float]) -> Dict[str, List[int]]:
+        # Simulated sklearn KMeans clustering
+        question_difficulties = []
+        for i, question in enumerate(exam['questions']):
+            correct_count = sum(1 for result in self.user_exam_results.values() 
+                                if exam['id'] in result and result[exam['id']]['answers'][i] == question['correct_answer'])
+            difficulty = 1 - (correct_count / len(scores))
+            question_difficulties.append((i, difficulty))
+
+        # Simple clustering based on difficulty
+        easy = [i for i, diff in question_difficulties if diff < 0.3]
+        medium = [i for i, diff in question_difficulties if 0.3 <= diff < 0.7]
+        hard = [i for i, diff in question_difficulties if diff >= 0.7]
+
+        return {
+            "easy": easy,
+            "medium": medium,
+            "hard": hard
+        }
 
 exam_service = ExamService(get_llm_orchestrator(), get_text_embedding_service())
 
