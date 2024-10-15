@@ -26,5 +26,12 @@
     pkgs.geckodriver
     pkgs.bash
     pkgs.glibcLocales
+    pkgs.python3
+    pkgs.python3Packages.fastapi
+    pkgs.python3Packages.uvicorn
+    pkgs.nodejs
+    pkgs.nodePackages.npm
+    pkgs.yarn
+    pkgs.expo-cli
   ];
 }
