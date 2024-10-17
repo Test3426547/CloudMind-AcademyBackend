@@ -1,5 +1,4 @@
 import numpy as np
-import tensorflow as tf
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -8,6 +7,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, accuracy_score
 from typing import List, Dict, Any
 import logging
+from pydantic import BaseModel, ConfigDict
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments
+from datasets import Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -77,43 +79,56 @@ class MLFlows:
 
         return {"model": model, "accuracy": accuracy}
 
-    def neural_network_tensorflow(self,
-                                  X: np.ndarray,
-                                  y: np.ndarray,
-                                  epochs: int = 100,
-                                  batch_size: int = 32) -> Dict[str, Any]:
+    def neural_network_pytorch(self,
+                                X: np.ndarray,
+                                y: np.ndarray,
+                                epochs: int = 100,
+                                batch_size: int = 32) -> Dict[str, Any]:
         X = self.scaler.fit_transform(X)
         X_train, X_test, y_train, y_test = train_test_split(X,
                                                             y,
                                                             test_size=0.2,
                                                             random_state=42)
 
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64,
-                                  activation='relu',
-                                  input_shape=(X_train.shape[1], )),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
+        X_train = torch.FloatTensor(X_train)
+        y_train = torch.FloatTensor(y_train)
+        X_test = torch.FloatTensor(X_test)
+        y_test = torch.FloatTensor(y_test)
 
-        model.compile(optimizer='adam',
-                      loss='binary_crossentropy',
-                      metrics=['accuracy'])
+        class NeuralNetwork(nn.Module):
+            def __init__(self, input_size):
+                super(NeuralNetwork, self).__init__()
+                self.fc1 = nn.Linear(input_size, 64)
+                self.fc2 = nn.Linear(64, 32)
+                self.fc3 = nn.Linear(32, 1)
 
-        history = model.fit(X_train,
-                            y_train,
-                            epochs=epochs,
-                            batch_size=batch_size,
-                            validation_split=0.2,
-                            verbose=0)
+            def forward(self, x):
+                x = torch.relu(self.fc1(x))
+                x = torch.relu(self.fc2(x))
+                x = torch.sigmoid(self.fc3(x))
+                return x
 
-        test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+        model = NeuralNetwork(X_train.shape[1])
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(model.parameters())
 
-        return {
-            "model": model,
-            "history": history.history,
-            "test_accuracy": test_accuracy
-        }
+        for epoch in range(epochs):
+            for i in range(0, len(X_train), batch_size):
+                batch_X = X_train[i:i+batch_size]
+                batch_y = y_train[i:i+batch_size]
+
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y.unsqueeze(1))
+                loss.backward()
+                optimizer.step()
+
+        model.eval()
+        with torch.no_grad():
+            y_pred = (model(X_test) > 0.5).float()
+            accuracy = accuracy_score(y_test, y_pred)
+
+        return {"model": model, "accuracy": accuracy}
 
     def convolutional_neural_network_pytorch(
             self,
@@ -173,7 +188,7 @@ class MLFlows:
 
         return {"model": model, "accuracy": accuracy}
 
-    def recurrent_neural_network_tensorflow(
+    def recurrent_neural_network_pytorch(
             self,
             X: np.ndarray,
             y: np.ndarray,
@@ -185,32 +200,43 @@ class MLFlows:
                                                             test_size=0.2,
                                                             random_state=42)
 
-        model = tf.keras.Sequential([
-            tf.keras.layers.LSTM(64,
-                                 input_shape=(X_train.shape[1], 1),
-                                 return_sequences=True),
-            tf.keras.layers.LSTM(32),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
+        X_train = torch.FloatTensor(X_train)
+        y_train = torch.FloatTensor(y_train)
+        X_test = torch.FloatTensor(X_test)
+        y_test = torch.FloatTensor(y_test)
 
-        model.compile(optimizer='adam',
-                      loss='binary_crossentropy',
-                      metrics=['accuracy'])
+        class RNN(nn.Module):
+            def __init__(self, input_size, hidden_size, output_size):
+                super(RNN, self).__init__()
+                self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
+                self.fc = nn.Linear(hidden_size, output_size)
 
-        history = model.fit(X_train,
-                            y_train,
-                            epochs=epochs,
-                            batch_size=batch_size,
-                            validation_split=0.2,
-                            verbose=0)
+            def forward(self, x):
+                _, (hidden, _) = self.lstm(x)
+                out = self.fc(hidden[-1])
+                return torch.sigmoid(out)
 
-        test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+        model = RNN(1, 64, 1)
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(model.parameters())
 
-        return {
-            "model": model,
-            "history": history.history,
-            "test_accuracy": test_accuracy
-        }
+        for epoch in range(epochs):
+            for i in range(0, len(X_train), batch_size):
+                batch_X = X_train[i:i+batch_size]
+                batch_y = y_train[i:i+batch_size]
+
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y.unsqueeze(1))
+                loss.backward()
+                optimizer.step()
+
+        model.eval()
+        with torch.no_grad():
+            y_pred = (model(X_test) > 0.5).float()
+            accuracy = accuracy_score(y_test, y_pred)
+
+        return {"model": model, "accuracy": accuracy}
 
     def gradient_boosting_sklearn(self, X: np.ndarray,
                                   y: np.ndarray) -> Dict[str, Any]:
@@ -280,40 +306,83 @@ class MLFlows:
             "explained_variance_ratio": pca.explained_variance_ratio_
         }
 
+    def huggingface_model(self, model_name: str, dataset: List[Dict[str, str]], num_train_epochs: int = 3, learning_rate: float = 2e-5) -> Dict[str, Any]:
+        # Convert the dataset to a Hugging Face Dataset
+        dataset = Dataset.from_dict({
+            "text": [item["text"] for item in dataset],
+            "label": [item["label"] for item in dataset]
+        })
+
+        # Load pre-trained model and tokenizer
+        model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Tokenize the dataset
+        def tokenize_function(examples):
+            return tokenizer(examples["text"], padding="max_length", truncation=True)
+
+        tokenized_dataset = dataset.map(tokenize_function, batched=True)
+
+        # Define training arguments
+        training_args = TrainingArguments(
+            output_dir="./results",
+            num_train_epochs=num_train_epochs,
+            per_device_train_batch_size=8,
+            learning_rate=learning_rate,
+            weight_decay=0.01,
+        )
+
+        # Initialize Trainer
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=tokenized_dataset,
+        )
+
+        # Train the model
+        trainer.train()
+
+        return {"model": model, "tokenizer": tokenizer}
+
 
 class AIModelTrainingService:
 
     def __init__(self):
         self.ml_flows = MLFlows()
 
-    async def train_model(self, model_type: str,
-                          data: Dict[str, Any]) -> Dict[str, Any]:
+    async def train_model(self, model_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            X = np.array(data['features'])
-            y = np.array(data['labels'])
-
-            if model_type == "linear_regression":
-                result = self.ml_flows.linear_regression_numpy(X, y)
-            elif model_type == "logistic_regression":
-                result = self.ml_flows.logistic_regression_pytorch(X, y)
-            elif model_type == "neural_network":
-                result = self.ml_flows.neural_network_tensorflow(X, y)
-            elif model_type == "cnn":
-                result = self.ml_flows.convolutional_neural_network_pytorch(
-                    X, y)
-            elif model_type == "rnn":
-                result = self.ml_flows.recurrent_neural_network_tensorflow(
-                    X, y)
-            elif model_type == "gradient_boosting":
-                result = self.ml_flows.gradient_boosting_sklearn(X, y)
-            elif model_type == "svm":
-                result = self.ml_flows.support_vector_machine_sklearn(X, y)
-            elif model_type == "kmeans":
-                result = self.ml_flows.k_means_clustering_sklearn(X)
-            elif model_type == "pca":
-                result = self.ml_flows.principal_component_analysis_sklearn(X)
+            if model_type == "huggingface":
+                result = self.ml_flows.huggingface_model(
+                    model_name=data['model_name'],
+                    dataset=data['dataset'],
+                    num_train_epochs=data.get('num_train_epochs', 3),
+                    learning_rate=data.get('learning_rate', 2e-5)
+                )
             else:
-                raise ValueError(f"Unsupported model type: {model_type}")
+                X = np.array(data['features'])
+                y = np.array(data['labels'])
+
+                if model_type == "linear_regression":
+                    result = self.ml_flows.linear_regression_numpy(X, y)
+                elif model_type == "logistic_regression":
+                    result = self.ml_flows.logistic_regression_pytorch(X, y)
+                elif model_type == "neural_network":
+                    result = self.ml_flows.neural_network_pytorch(X, y)
+                elif model_type == "cnn":
+                    result = self.ml_flows.convolutional_neural_network_pytorch(X, y)
+                elif model_type == "rnn":
+                    result = self.ml_flows.recurrent_neural_network_pytorch(X, y)
+                elif model_type == "gradient_boosting":
+                    result = self.ml_flows.gradient_boosting_sklearn(X, y)
+                elif model_type == "svm":
+                    result = self.ml_flows.support_vector_machine_sklearn(X, y)
+                elif model_type == "kmeans":
+                    result = self.ml_flows.k_means_clustering_sklearn(X)
+                elif model_type == "pca":
+                    result = self.ml_flows.principal_component_analysis_sklearn(X)
+                else:
+                    raise ValueError(f"Unsupported model type: {model_type}")
 
             return {
                 "status": "success",
@@ -330,3 +399,11 @@ ai_model_training_service = AIModelTrainingService()
 
 def get_ai_model_training_service() -> AIModelTrainingService:
     return ai_model_training_service
+
+class HuggingFaceTrainingRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+    
+    model_name: str
+    dataset: List[Dict[str, str]]
+    num_train_epochs: int = 3
+    learning_rate: float = 2e-5

@@ -1,5 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()  # This should be at the very top of main.py
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+# Rest of your imports and code...
 from supabase import Client
 from auth_config import get_supabase_client
 from fastapi_cache import FastAPICache
@@ -34,8 +37,16 @@ from routers import (
     user,
     advanced_search  # Add this line
 )
+from contextlib import asynccontextmanager
+from admin_config import site as admin_site
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup code here (if any)
+    yield
+    # Shutdown code here (if any)
+
+app = FastAPI(lifespan=lifespan)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -76,9 +87,16 @@ app.include_router(exam.router)
 app.include_router(user.router)
 app.include_router(advanced_search.router)  # Add this line
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to CloudMind Academy Backend"}
+
 @app.on_event("startup")
 async def startup():
     FastAPICache.init(InMemoryBackend())
+
+# Mount the admin site
+app.mount("/admin", admin_site.app)
 
 if __name__ == "__main__":
     import uvicorn

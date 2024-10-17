@@ -15,12 +15,11 @@ dependencies = [
     "deep-translator",
     "difflib",
     "email-validator>=2.2.0",
-    "fastapi-amis-admin>=0.7.2",
+    "fastapi-amis-admin>=0.5.5,<0.8.0",
     "fastapi-code-generator>=0.5.1",
     "fastapi-limiter",
     "fastapi-mail>=1.4.1",
-    "fastapi>=0.115.0",
-    "fuzzywuzzy>=0.18.0",
+    "fastapi>=0.95.1,<0.100.0",
     "imagebind",
     "langchain>=0.0.27",
     "librosa",
@@ -60,7 +59,14 @@ dependencies = [
     "transformers>=4.45.2",
     "translate",
     "uvicorn>=0.31.1",
-    "web3==6.15.1",
+    "web3>=5.31.3,<6.0.0",
     "websockets>=13.1",
     "wheel",
 ]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["models", "routers", "services"]

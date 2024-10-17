@@ -1,4 +1,6 @@
-modules = ["python-3.11", "nodejs-20"]
+modules = ["nix", "nodejs-20", "python-3.11", "web"]
+entrypoint = "main.py"
+run = "python main.py"
 
 [nix]
 channel = "stable-24_05"
@@ -75,7 +77,7 @@ task = "shell.exec"
 args = "python test_certificates.py"
 
 [deployment]
-run = "bash run_all.sh"
+run = ["sh", "-c", "uvicorn main:app --host 0.0.0.0"]
 
 [[ports]]
 localPort = 3000

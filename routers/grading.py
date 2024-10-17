@@ -17,7 +17,7 @@ class AssignmentSubmission(BaseModel):
 
 class QuizRequest(BaseModel):
     topic: str = Field(..., min_length=1, max_length=100)
-    difficulty: str = Field(..., regex="^(easy|medium|hard)$")
+    difficulty: str = Field(..., pattern="^(easy|medium|hard)$")
     num_questions: int = Field(..., ge=1, le=50)
 
 @router.post("/grade-assignment")
